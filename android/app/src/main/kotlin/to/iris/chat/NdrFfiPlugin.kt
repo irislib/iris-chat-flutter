@@ -8,28 +8,20 @@ import io.flutter.plugin.common.MethodChannel.Result
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-// UniFFI Import - Uncomment after running build-android.sh:
-// import uniffi.ndr_ffi.*
+import uniffi.ndr_ffi.*
 
 /**
  * Flutter plugin for ndr-ffi bindings.
  *
  * This plugin bridges Flutter's platform channels to the UniFFI-generated
  * Kotlin bindings for the Rust ndr-ffi library.
- *
- * Integration steps:
- * 1. Build ndr-ffi: cd /path/to/nostr-double-ratchet && ./scripts/mobile/build-android.sh --release
- * 2. Copy jniLibs to android/app/src/main/jniLibs/
- * 3. Copy ndr_ffi.kt to android/app/src/main/kotlin/to/iris/chat/
- * 4. Uncomment the UniFFI import above and the implementations below
  */
 class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
     private lateinit var channel: MethodChannel
 
-    // Handle storage with type-erased containers
-    // These will hold InviteHandle and SessionHandle instances once UniFFI is integrated
-    private val inviteHandles = ConcurrentHashMap<String, Any>()
-    private val sessionHandles = ConcurrentHashMap<String, Any>()
+    // Handle storage
+    private val inviteHandles = ConcurrentHashMap<String, InviteHandle>()
+    private val sessionHandles = ConcurrentHashMap<String, SessionHandle>()
     private val nextHandleId = AtomicLong(1)
 
     private fun generateHandleId(): String = nextHandleId.getAndIncrement().toString()
@@ -42,6 +34,8 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
         // Clean up all handles
+        inviteHandles.values.forEach { it.close() }
+        sessionHandles.values.forEach { it.close() }
         inviteHandles.clear()
         sessionHandles.clear()
     }
@@ -75,6 +69,8 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
             }
         } catch (e: IllegalArgumentException) {
             result.error("InvalidArguments", e.message, null)
+        } catch (e: NdrException) {
+            result.error("NdrError", e.message, null)
         } catch (e: Exception) {
             result.error("NdrError", e.message, e.stackTraceToString())
         }
@@ -83,37 +79,27 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
     // MARK: - Version
 
     private fun handleVersion(result: Result) {
-        // Uncomment when UniFFI bindings are integrated:
-        // result.success(version())
-        result.success("0.0.39")
+        result.success(version())
     }
 
     // MARK: - Keypair
 
     private fun handleGenerateKeypair(result: Result) {
-        // Uncomment when UniFFI bindings are integrated:
-        // val keypair = generateKeypair()
-        // result.success(mapOf(
-        //     "publicKeyHex" to keypair.publicKeyHex,
-        //     "privateKeyHex" to keypair.privateKeyHex
-        // ))
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val keypair = generateKeypair()
+        result.success(mapOf(
+            "publicKeyHex" to keypair.publicKeyHex,
+            "privateKeyHex" to keypair.privateKeyHex
+        ))
     }
 
     private fun handleDerivePublicKey(call: MethodCall, result: Result) {
         val privkeyHex = call.argument<String>("privkeyHex")
             ?: throw IllegalArgumentException("Missing privkeyHex")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // try {
-        //     // Use secp256k1 to derive public key from private key
-        //     // This would typically be exposed via UniFFI or a separate crypto library
-        //     val pubkeyHex = derivePublicKey(privkeyHex)
-        //     result.success(pubkeyHex)
-        // } catch (e: Exception) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        // Generate a keypair and use secp256k1 to derive public key
+        // For now, we'll generate a new keypair and return its public key
+        // TODO: Add derivePublicKey to ndr-ffi Rust library
+        result.error("NotImplemented", "derivePublicKey not yet in ndr-ffi library", null)
     }
 
     // MARK: - Invite Creation
@@ -124,64 +110,40 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val deviceId = call.argument<String>("deviceId")
         val maxUses = call.argument<Int>("maxUses")?.toUInt()
 
-        // Uncomment when UniFFI bindings are integrated:
-        // try {
-        //     val invite = InviteHandle.createNew(inviterPubkeyHex, deviceId, maxUses)
-        //     val id = generateHandleId()
-        //     inviteHandles[id] = invite
-        //     result.success(mapOf("id" to id))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = InviteHandle.createNew(inviterPubkeyHex, deviceId, maxUses)
+        val id = generateHandleId()
+        inviteHandles[id] = invite
+        result.success(mapOf("id" to id))
     }
 
     private fun handleInviteFromUrl(call: MethodCall, result: Result) {
         val url = call.argument<String>("url")
             ?: throw IllegalArgumentException("Missing url")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // try {
-        //     val invite = InviteHandle.fromUrl(url)
-        //     val id = generateHandleId()
-        //     inviteHandles[id] = invite
-        //     result.success(mapOf("id" to id))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = InviteHandle.fromUrl(url)
+        val id = generateHandleId()
+        inviteHandles[id] = invite
+        result.success(mapOf("id" to id))
     }
 
     private fun handleInviteFromEventJson(call: MethodCall, result: Result) {
         val eventJson = call.argument<String>("eventJson")
             ?: throw IllegalArgumentException("Missing eventJson")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // try {
-        //     val invite = InviteHandle.fromEventJson(eventJson)
-        //     val id = generateHandleId()
-        //     inviteHandles[id] = invite
-        //     result.success(mapOf("id" to id))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = InviteHandle.fromEventJson(eventJson)
+        val id = generateHandleId()
+        inviteHandles[id] = invite
+        result.success(mapOf("id" to id))
     }
 
     private fun handleInviteDeserialize(call: MethodCall, result: Result) {
         val json = call.argument<String>("json")
             ?: throw IllegalArgumentException("Missing json")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // try {
-        //     val invite = InviteHandle.deserialize(json)
-        //     val id = generateHandleId()
-        //     inviteHandles[id] = invite
-        //     result.success(mapOf("id" to id))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = InviteHandle.deserialize(json)
+        val id = generateHandleId()
+        inviteHandles[id] = invite
+        result.success(mapOf("id" to id))
     }
 
     // MARK: - Invite Methods
@@ -192,48 +154,30 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val root = call.argument<String>("root")
             ?: throw IllegalArgumentException("Missing root")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val invite = inviteHandles[id] as? InviteHandle
-        //     ?: throw IllegalArgumentException("Invite handle not found: $id")
-        // try {
-        //     val url = invite.toUrl(root)
-        //     result.success(url)
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        val url = invite.toUrl(root)
+        result.success(url)
     }
 
     private fun handleInviteToEventJson(call: MethodCall, result: Result) {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val invite = inviteHandles[id] as? InviteHandle
-        //     ?: throw IllegalArgumentException("Invite handle not found: $id")
-        // try {
-        //     val eventJson = invite.toEventJson()
-        //     result.success(eventJson)
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        val eventJson = invite.toEventJson()
+        result.success(eventJson)
     }
 
     private fun handleInviteSerialize(call: MethodCall, result: Result) {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val invite = inviteHandles[id] as? InviteHandle
-        //     ?: throw IllegalArgumentException("Invite handle not found: $id")
-        // try {
-        //     val json = invite.serialize()
-        //     result.success(json)
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        val json = invite.serialize()
+        result.success(json)
     }
 
     private fun handleInviteAccept(call: MethodCall, result: Result) {
@@ -245,49 +189,39 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
             ?: throw IllegalArgumentException("Missing inviteePrivkeyHex")
         val deviceId = call.argument<String>("deviceId")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val invite = inviteHandles[id] as? InviteHandle
-        //     ?: throw IllegalArgumentException("Invite handle not found: $id")
-        // try {
-        //     val acceptResult = invite.accept(inviteePubkeyHex, inviteePrivkeyHex, deviceId)
-        //     val sessionId = generateHandleId()
-        //     sessionHandles[sessionId] = acceptResult.session
-        //     result.success(mapOf(
-        //         "session" to mapOf("id" to sessionId),
-        //         "responseEventJson" to acceptResult.responseEventJson
-        //     ))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        val acceptResult = invite.accept(inviteePubkeyHex, inviteePrivkeyHex, deviceId)
+        val sessionId = generateHandleId()
+        sessionHandles[sessionId] = acceptResult.session
+        result.success(mapOf(
+            "session" to mapOf("id" to sessionId),
+            "responseEventJson" to acceptResult.responseEventJson
+        ))
     }
 
     private fun handleInviteGetInviterPubkeyHex(call: MethodCall, result: Result) {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val invite = inviteHandles[id] as? InviteHandle
-        //     ?: throw IllegalArgumentException("Invite handle not found: $id")
-        // result.success(invite.getInviterPubkeyHex())
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        result.success(invite.getInviterPubkeyHex())
     }
 
     private fun handleInviteGetSharedSecretHex(call: MethodCall, result: Result) {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val invite = inviteHandles[id] as? InviteHandle
-        //     ?: throw IllegalArgumentException("Invite handle not found: $id")
-        // result.success(invite.getSharedSecretHex())
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        result.success(invite.getSharedSecretHex())
     }
 
     private fun handleInviteDispose(call: MethodCall, result: Result) {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
-        inviteHandles.remove(id)
+        inviteHandles.remove(id)?.close()
         result.success(null)
     }
 
@@ -297,16 +231,10 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val stateJson = call.argument<String>("stateJson")
             ?: throw IllegalArgumentException("Missing stateJson")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // try {
-        //     val session = SessionHandle.fromStateJson(stateJson)
-        //     val id = generateHandleId()
-        //     sessionHandles[id] = session
-        //     result.success(mapOf("id" to id))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val session = SessionHandle.fromStateJson(stateJson)
+        val id = generateHandleId()
+        sessionHandles[id] = session
+        result.success(mapOf("id" to id))
     }
 
     private fun handleSessionInit(call: MethodCall, result: Result) {
@@ -320,22 +248,16 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
             ?: throw IllegalArgumentException("Missing sharedSecretHex")
         val name = call.argument<String>("name")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // try {
-        //     val session = SessionHandle.init(
-        //         theirEphemeralPubkeyHex,
-        //         ourEphemeralPrivkeyHex,
-        //         isInitiator,
-        //         sharedSecretHex,
-        //         name
-        //     )
-        //     val id = generateHandleId()
-        //     sessionHandles[id] = session
-        //     result.success(mapOf("id" to id))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val session = SessionHandle.init(
+            theirEphemeralPubkeyHex,
+            ourEphemeralPrivkeyHex,
+            isInitiator,
+            sharedSecretHex,
+            name
+        )
+        val id = generateHandleId()
+        sessionHandles[id] = session
+        result.success(mapOf("id" to id))
     }
 
     // MARK: - Session Methods
@@ -344,11 +266,9 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val session = sessionHandles[id] as? SessionHandle
-        //     ?: throw IllegalArgumentException("Session handle not found: $id")
-        // result.success(session.canSend())
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val session = sessionHandles[id]
+            ?: throw IllegalArgumentException("Session handle not found: $id")
+        result.success(session.canSend())
     }
 
     private fun handleSessionSendText(call: MethodCall, result: Result) {
@@ -357,19 +277,13 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val text = call.argument<String>("text")
             ?: throw IllegalArgumentException("Missing text")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val session = sessionHandles[id] as? SessionHandle
-        //     ?: throw IllegalArgumentException("Session handle not found: $id")
-        // try {
-        //     val sendResult = session.sendText(text)
-        //     result.success(mapOf(
-        //         "outerEventJson" to sendResult.outerEventJson,
-        //         "innerEventJson" to sendResult.innerEventJson
-        //     ))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val session = sessionHandles[id]
+            ?: throw IllegalArgumentException("Session handle not found: $id")
+        val sendResult = session.sendText(text)
+        result.success(mapOf(
+            "outerEventJson" to sendResult.outerEventJson,
+            "innerEventJson" to sendResult.innerEventJson
+        ))
     }
 
     private fun handleSessionDecryptEvent(call: MethodCall, result: Result) {
@@ -378,35 +292,23 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val outerEventJson = call.argument<String>("outerEventJson")
             ?: throw IllegalArgumentException("Missing outerEventJson")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val session = sessionHandles[id] as? SessionHandle
-        //     ?: throw IllegalArgumentException("Session handle not found: $id")
-        // try {
-        //     val decryptResult = session.decryptEvent(outerEventJson)
-        //     result.success(mapOf(
-        //         "plaintext" to decryptResult.plaintext,
-        //         "innerEventJson" to decryptResult.innerEventJson
-        //     ))
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val session = sessionHandles[id]
+            ?: throw IllegalArgumentException("Session handle not found: $id")
+        val decryptResult = session.decryptEvent(outerEventJson)
+        result.success(mapOf(
+            "plaintext" to decryptResult.plaintext,
+            "innerEventJson" to decryptResult.innerEventJson
+        ))
     }
 
     private fun handleSessionStateJson(call: MethodCall, result: Result) {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val session = sessionHandles[id] as? SessionHandle
-        //     ?: throw IllegalArgumentException("Session handle not found: $id")
-        // try {
-        //     val stateJson = session.stateJson()
-        //     result.success(stateJson)
-        // } catch (e: NdrError) {
-        //     result.error("NdrError", e.message, null)
-        // }
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val session = sessionHandles[id]
+            ?: throw IllegalArgumentException("Session handle not found: $id")
+        val stateJson = session.stateJson()
+        result.success(stateJson)
     }
 
     private fun handleSessionIsDrMessage(call: MethodCall, result: Result) {
@@ -415,17 +317,15 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val eventJson = call.argument<String>("eventJson")
             ?: throw IllegalArgumentException("Missing eventJson")
 
-        // Uncomment when UniFFI bindings are integrated:
-        // val session = sessionHandles[id] as? SessionHandle
-        //     ?: throw IllegalArgumentException("Session handle not found: $id")
-        // result.success(session.isDrMessage(eventJson))
-        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+        val session = sessionHandles[id]
+            ?: throw IllegalArgumentException("Session handle not found: $id")
+        result.success(session.isDrMessage(eventJson))
     }
 
     private fun handleSessionDispose(call: MethodCall, result: Result) {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
-        sessionHandles.remove(id)
+        sessionHandles.remove(id)?.close()
         result.success(null)
     }
 }
