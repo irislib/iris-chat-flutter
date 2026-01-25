@@ -44,6 +44,8 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
                 handleVersion(result: result)
             case "generateKeypair":
                 handleGenerateKeypair(result: result)
+            case "derivePublicKey":
+                try handleDerivePublicKey(call: call, result: result)
             case "createInvite":
                 try handleCreateInvite(call: call, result: result)
             case "inviteFromUrl":
@@ -109,6 +111,24 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
         //     "publicKeyHex": keypair.publicKeyHex,
         //     "privateKeyHex": keypair.privateKeyHex
         // ])
+        result(FlutterError(code: "NotImplemented", message: "Build ndr-ffi and integrate UniFFI bindings", details: nil))
+    }
+
+    private func handleDerivePublicKey(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let privkeyHex = args["privkeyHex"] as? String else {
+            throw NdrPluginError.invalidArguments("Missing privkeyHex")
+        }
+
+        // Uncomment when UniFFI bindings are integrated:
+        // do {
+        //     // Use secp256k1 to derive public key from private key
+        //     // This would typically be exposed via UniFFI or a separate crypto library
+        //     let pubkeyHex = try derivePublicKey(privkeyHex: privkeyHex)
+        //     result(pubkeyHex)
+        // } catch {
+        //     throw NdrPluginError.ndrError(error.localizedDescription)
+        // }
         result(FlutterError(code: "NotImplemented", message: "Build ndr-ffi and integrate UniFFI bindings", details: nil))
     }
 

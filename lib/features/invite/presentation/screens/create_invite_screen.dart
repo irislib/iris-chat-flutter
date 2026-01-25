@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../config/providers/invite_provider.dart';
 
@@ -63,9 +64,10 @@ class _CreateInviteScreenState extends ConsumerState<CreateInviteScreen> {
   Future<void> _share() async {
     if (_inviteUrl == null) return;
 
-    // TODO: Implement share sheet
-    // For now, just copy to clipboard
-    await _copyToClipboard();
+    await Share.share(
+      _inviteUrl!,
+      subject: 'Iris Chat Invite',
+    );
   }
 
   @override

@@ -75,9 +75,6 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   Future<String> _derivePublicKey(String privkeyHex) async {
-    // TODO: Implement using ndr-ffi or secp256k1
-    // For now, this is a placeholder
-    // In production, we'd call the native code to derive the public key
-    throw UnimplementedError('Public key derivation not yet implemented');
+    return NdrFfi.derivePublicKey(privkeyHex);
   }
 }

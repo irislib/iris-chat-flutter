@@ -100,6 +100,20 @@ class NdrFfi {
     return SessionHandle._fromMap(Map<String, dynamic>.from(result));
   }
 
+  /// Derive a public key from a private key.
+  ///
+  /// [privkeyHex] - The private key as 64-char hex string.
+  /// Returns the public key as 64-char hex string.
+  static Future<String> derivePublicKey(String privkeyHex) async {
+    final result = await _channel.invokeMethod<String>('derivePublicKey', {
+      'privkeyHex': privkeyHex,
+    });
+    if (result == null) {
+      throw NdrException.invalidKey('Failed to derive public key');
+    }
+    return result;
+  }
+
   /// Initialize a new session directly (advanced use).
   static Future<SessionHandle> sessionInit({
     required String theirEphemeralPubkeyHex,

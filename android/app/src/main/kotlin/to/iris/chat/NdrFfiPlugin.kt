@@ -51,6 +51,7 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
             when (call.method) {
                 "version" -> handleVersion(result)
                 "generateKeypair" -> handleGenerateKeypair(result)
+                "derivePublicKey" -> handleDerivePublicKey(call, result)
                 "createInvite" -> handleCreateInvite(call, result)
                 "inviteFromUrl" -> handleInviteFromUrl(call, result)
                 "inviteFromEventJson" -> handleInviteFromEventJson(call, result)
@@ -96,6 +97,22 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         //     "publicKeyHex" to keypair.publicKeyHex,
         //     "privateKeyHex" to keypair.privateKeyHex
         // ))
+        result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
+    }
+
+    private fun handleDerivePublicKey(call: MethodCall, result: Result) {
+        val privkeyHex = call.argument<String>("privkeyHex")
+            ?: throw IllegalArgumentException("Missing privkeyHex")
+
+        // Uncomment when UniFFI bindings are integrated:
+        // try {
+        //     // Use secp256k1 to derive public key from private key
+        //     // This would typically be exposed via UniFFI or a separate crypto library
+        //     val pubkeyHex = derivePublicKey(privkeyHex)
+        //     result.success(pubkeyHex)
+        // } catch (e: Exception) {
+        //     result.error("NdrError", e.message, null)
+        // }
         result.error("NotImplemented", "Build ndr-ffi and integrate UniFFI bindings", null)
     }
 

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/providers/chat_provider.dart';
 import '../../domain/models/message.dart';
+import '../../domain/models/session.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -108,9 +110,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
-            onPressed: () {
-              // TODO: Show session info
-            },
+            onPressed: () => _showSessionInfo(context, session),
           ),
         ],
       ),
@@ -196,6 +196,106 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  void _showSessionInfo(BuildContext context, ChatSession session) {
+    final theme = Theme.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    child: Text(
+                      session.displayName.isNotEmpty
+                          ? session.displayName[0].toUpperCase()
+                          : '?',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: theme.colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          session.displayName,
+                          style: theme.textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.lock,
+                              size: 14,
+                              color: theme.colorScheme.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'End-to-end encrypted',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              _InfoRow(
+                label: 'Public Key',
+                value: session.recipientPubkeyHex,
+                copyable: true,
+              ),
+              const SizedBox(height: 12),
+              _InfoRow(
+                label: 'Session Created',
+                value: _formatDate(session.createdAt),
+              ),
+              if (session.inviteId != null) ...[
+                const SizedBox(height: 12),
+                _InfoRow(
+                  label: 'Invite ID',
+                  value: session.inviteId!,
+                ),
+              ],
+              const SizedBox(height: 12),
+              _InfoRow(
+                label: 'Role',
+                value: session.isInitiator ? 'Initiator' : 'Responder',
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                  label: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 }
 
@@ -395,6 +495,62 @@ class _MessageInput extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool copyable;
+
+  const _InfoRow({
+    required this.label,
+    required this.value,
+    this.copyable = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 100,
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value.length > 20 && copyable
+                ? '${value.substring(0, 8)}...${value.substring(value.length - 8)}'
+                : value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontFamily: copyable ? 'monospace' : null,
+            ),
+          ),
+        ),
+        if (copyable)
+          IconButton(
+            icon: const Icon(Icons.copy, size: 18),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: value));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Copied to clipboard')),
+                );
+              }
+            },
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+      ],
     );
   }
 }

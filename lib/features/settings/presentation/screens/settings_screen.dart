@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../config/providers/auth_provider.dart';
+import '../../../../config/providers/chat_provider.dart';
+import '../../../../core/services/secure_storage_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -66,9 +69,7 @@ class SettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.code),
             title: const Text('Source Code'),
             subtitle: const Text('github.com/irislib/iris-chat-flutter'),
-            onTap: () {
-              // TODO: Open URL
-            },
+            onTap: () => _openUrl('https://github.com/irislib/iris-chat-flutter'),
           ),
 
           // Danger zone
@@ -99,6 +100,13 @@ class SettingsScreen extends ConsumerWidget {
   String _formatPubkey(String hex) {
     if (hex.length < 16) return hex;
     return '${hex.substring(0, 8)}...${hex.substring(hex.length - 8)}';
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Future<void> _showExportKeyDialog(BuildContext context, WidgetRef ref) async {
@@ -233,8 +241,17 @@ class SettingsScreen extends ConsumerWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      // TODO: Clear database and secure storage
+      // Clear database
+      final dbService = ref.read(databaseServiceProvider);
+      await dbService.deleteDatabase();
+
+      // Clear secure storage
+      final secureStorage = SecureStorageService();
+      await secureStorage.clearIdentity();
+
+      // Logout (clears auth state)
       await ref.read(authStateProvider.notifier).logout();
+
       if (context.mounted) {
         context.go('/login');
       }

@@ -7,6 +7,7 @@ import '../../features/invite/data/datasources/invite_local_datasource.dart';
 import '../../features/invite/domain/models/invite.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
+import 'nostr_provider.dart';
 
 part 'invite_provider.freezed.dart';
 
@@ -123,8 +124,9 @@ class InviteNotifier extends StateNotifier<InviteState> {
 
       await sessionNotifier.addSession(session);
 
-      // TODO: Publish response event to Nostr relays
-      // await nostrService.publishEvent(acceptResult.responseEventJson);
+      // Publish response event to Nostr relays
+      final nostrService = _ref.read(nostrServiceProvider);
+      await nostrService.publishEvent(acceptResult.responseEventJson);
 
       state = state.copyWith(isAccepting: false);
       return session.id;
