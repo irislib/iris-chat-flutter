@@ -1,0 +1,81 @@
+name: iris_chat
+description: End-to-end encrypted chat app using Nostr Double Ratchet protocol.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Immutable State
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # Navigation
+  go_router: ^15.1.2
+
+  # Storage
+  shared_preferences: ^2.5.3
+  flutter_secure_storage: ^9.2.4
+  path_provider: ^2.1.5
+  sqflite: ^2.4.2
+
+  # UI
+  flutter_screenutil: ^5.9.3
+  gap: ^3.0.1
+  flutter_svg: ^2.1.0
+  cached_network_image: ^3.4.1
+
+  # QR Codes
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.0.1
+
+  # Utilities
+  uuid: ^4.5.1
+  collection: ^1.19.1
+  intl: ^0.20.2
+
+  # Nostr
+  nostr: ^1.5.0
+  bip340: ^0.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+  # Code Generation
+  build_runner: ^2.4.14
+  freezed: ^2.5.8
+  json_serializable: ^6.9.1
+  riverpod_generator: ^2.6.4
+
+  # Testing
+  mocktail: ^1.0.4
+  bloc_test: ^9.1.7
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
+
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
