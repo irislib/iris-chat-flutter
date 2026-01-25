@@ -1,11 +1,18 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../core/ffi/ndr_ffi.dart';
 import '../../core/services/database_service.dart';
+import '../../core/services/nostr_service.dart';
 import '../../features/chat/data/datasources/message_local_datasource.dart';
 import '../../features/chat/data/datasources/session_local_datasource.dart';
+import '../../features/chat/data/repositories/chat_repository_impl.dart';
 import '../../features/chat/domain/models/message.dart';
 import '../../features/chat/domain/models/session.dart';
+import '../../features/chat/domain/repositories/chat_repository.dart';
+import 'nostr_provider.dart';
 
 part 'chat_provider.freezed.dart';
 
@@ -142,9 +149,16 @@ class SessionNotifier extends StateNotifier<SessionState> {
 class ChatNotifier extends StateNotifier<ChatState> {
   final MessageLocalDatasource _messageDatasource;
   final SessionLocalDatasource _sessionDatasource;
+  final NostrService _nostrService;
 
-  ChatNotifier(this._messageDatasource, this._sessionDatasource)
-      : super(const ChatState());
+  // Cache of session handles for sending/receiving
+  final Map<String, SessionHandle> _sessionHandles = {};
+
+  ChatNotifier(
+    this._messageDatasource,
+    this._sessionDatasource,
+    this._nostrService,
+  ) : super(const ChatState());
 
   /// Load messages for a session.
   Future<void> loadMessages(String sessionId, {int limit = 50}) async {
@@ -199,6 +213,101 @@ class ChatNotifier extends StateNotifier<ChatState> {
       },
       sendingStates: {...state.sendingStates, message.id: true},
     );
+  }
+
+  /// Send a message.
+  Future<void> sendMessage(String sessionId, String text) async {
+    // Create optimistic message
+    final message = ChatMessage.outgoing(
+      sessionId: sessionId,
+      text: text,
+    );
+
+    // Add to UI immediately
+    addMessageOptimistic(message);
+
+    try {
+      // Get or restore the session handle
+      final handle = await _getSessionHandle(sessionId);
+      if (handle == null) {
+        throw Exception('Session not found');
+      }
+
+      // Check if can send
+      final canSend = await handle.canSend();
+      if (!canSend) {
+        throw Exception('Session is not ready');
+      }
+
+      // Encrypt and get event
+      final sendResult = await handle.sendText(text);
+
+      // Update session state
+      final newState = await handle.stateJson();
+      await _sessionDatasource.saveSessionState(sessionId, newState);
+
+      // Publish to Nostr
+      await _nostrService.publishEvent(sendResult.outerEventJson);
+
+      // Parse event ID
+      final eventData = jsonDecode(sendResult.outerEventJson) as Map<String, dynamic>;
+      final eventId = eventData['id'] as String;
+
+      // Update message with success
+      final sentMessage = message.copyWith(
+        status: MessageStatus.sent,
+        eventId: eventId,
+      );
+      await updateMessage(sentMessage);
+    } catch (e) {
+      // Update message with failure
+      final failedMessage = message.copyWith(status: MessageStatus.failed);
+      await updateMessage(failedMessage);
+      state = state.copyWith(error: e.toString());
+    }
+  }
+
+  /// Receive a message from Nostr.
+  Future<void> receiveMessage(String sessionId, String eventJson) async {
+    try {
+      // Check if already have this message
+      final eventData = jsonDecode(eventJson) as Map<String, dynamic>;
+      final eventId = eventData['id'] as String;
+
+      if (await _messageDatasource.messageExists(eventId)) {
+        return; // Already have this message
+      }
+
+      // Get or restore the session handle
+      final handle = await _getSessionHandle(sessionId);
+      if (handle == null) {
+        return;
+      }
+
+      // Decrypt
+      final decryptResult = await handle.decryptEvent(eventJson);
+
+      // Update session state
+      final newState = await handle.stateJson();
+      await _sessionDatasource.saveSessionState(sessionId, newState);
+
+      // Parse timestamp
+      final createdAt = eventData['created_at'] as int;
+      final timestamp = DateTime.fromMillisecondsSinceEpoch(createdAt * 1000);
+
+      // Create message
+      final message = ChatMessage.incoming(
+        sessionId: sessionId,
+        text: decryptResult.plaintext,
+        eventId: eventId,
+        timestamp: timestamp,
+      );
+
+      // Save and add to state
+      await addReceivedMessage(message);
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
   }
 
   /// Update a message (e.g., after sending succeeds).
@@ -262,6 +371,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
+  /// Get or restore a session handle.
+  Future<SessionHandle?> _getSessionHandle(String sessionId) async {
+    if (_sessionHandles.containsKey(sessionId)) {
+      return _sessionHandles[sessionId];
+    }
+
+    final stateJson = await _sessionDatasource.getSessionState(sessionId);
+    if (stateJson == null) return null;
+
+    try {
+      final handle = await NdrFfi.sessionFromStateJson(stateJson);
+      _sessionHandles[sessionId] = handle;
+      return handle;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Cache a session handle.
+  void cacheSessionHandle(String sessionId, SessionHandle handle) {
+    _sessionHandles[sessionId] = handle;
+  }
+
   /// Clear error state.
   void clearError() {
     state = state.copyWith(error: null);
@@ -284,6 +416,18 @@ final messageDatasourceProvider = Provider<MessageLocalDatasource>((ref) {
   return MessageLocalDatasource(db);
 });
 
+final chatRepositoryProvider = Provider<ChatRepository>((ref) {
+  final sessionDatasource = ref.watch(sessionDatasourceProvider);
+  final messageDatasource = ref.watch(messageDatasourceProvider);
+  final nostrService = ref.watch(nostrServiceProvider);
+
+  return ChatRepositoryImpl(
+    sessionDatasource: sessionDatasource,
+    messageDatasource: messageDatasource,
+    nostrService: nostrService,
+  );
+});
+
 final sessionStateProvider =
     StateNotifierProvider<SessionNotifier, SessionState>((ref) {
   final datasource = ref.watch(sessionDatasourceProvider);
@@ -293,7 +437,8 @@ final sessionStateProvider =
 final chatStateProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {
   final messageDatasource = ref.watch(messageDatasourceProvider);
   final sessionDatasource = ref.watch(sessionDatasourceProvider);
-  return ChatNotifier(messageDatasource, sessionDatasource);
+  final nostrService = ref.watch(nostrServiceProvider);
+  return ChatNotifier(messageDatasource, sessionDatasource, nostrService);
 });
 
 /// Provider for messages in a specific session.

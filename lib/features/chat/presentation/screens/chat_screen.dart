@@ -61,32 +61,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     _messageController.clear();
 
-    // Create optimistic message
-    final message = ChatMessage.outgoing(
-      sessionId: widget.sessionId,
-      text: text,
-    );
-
-    // Add to UI immediately
-    ref.read(chatStateProvider.notifier).addMessageOptimistic(message);
-
     // Scroll to bottom
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
-    // TODO: Actually send via FFI and Nostr
-    // For now, simulate success after a delay
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Update message status
-    ref.read(chatStateProvider.notifier).updateMessage(
-          message.copyWith(status: MessageStatus.sent),
+    // Send message via provider (handles optimistic update, encryption, and Nostr)
+    await ref.read(chatStateProvider.notifier).sendMessage(
+          widget.sessionId,
+          text,
         );
 
     // Update session metadata
-    ref.read(sessionStateProvider.notifier).updateSessionWithMessage(
-          widget.sessionId,
-          message,
-        );
+    final messages = ref.read(sessionMessagesProvider(widget.sessionId));
+    if (messages.isNotEmpty) {
+      ref.read(sessionStateProvider.notifier).updateSessionWithMessage(
+            widget.sessionId,
+            messages.last,
+          );
+    }
   }
 
   @override
