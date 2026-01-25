@@ -13,6 +13,15 @@ void main() {
   late SessionNotifier notifier;
   late MockSessionLocalDatasource mockDatasource;
 
+  setUpAll(() {
+    registerFallbackValue(ChatSession(
+      id: 'fallback',
+      recipientPubkeyHex: 'abc123',
+      createdAt: DateTime.now(),
+      isInitiator: true,
+    ));
+  });
+
   setUp(() {
     mockDatasource = MockSessionLocalDatasource();
     notifier = SessionNotifier(mockDatasource);

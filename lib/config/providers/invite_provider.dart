@@ -3,6 +3,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/ffi/ndr_ffi.dart';
+import '../../features/chat/domain/models/session.dart';
 import '../../features/invite/data/datasources/invite_local_datasource.dart';
 import '../../features/invite/domain/models/invite.dart';
 import 'auth_provider.dart';

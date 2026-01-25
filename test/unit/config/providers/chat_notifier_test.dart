@@ -41,6 +41,7 @@ void main() {
       direction: MessageDirection.outgoing,
       status: MessageStatus.pending,
     ));
+    registerFallbackValue(MessageStatus.pending);
   });
 
   group('ChatNotifier', () {
