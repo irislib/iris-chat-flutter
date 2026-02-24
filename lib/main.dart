@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'config/providers/startup_launch_provider.dart';
 import 'config/router.dart';
 import 'config/theme.dart';
 
@@ -16,6 +17,8 @@ class IrisChatApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    // Initialize startup-launch preference at app start.
+    ref.watch(startupLaunchProvider);
 
     return ScreenUtilInit(
       designSize: const Size(390, 844),
@@ -23,11 +26,11 @@ class IrisChatApp extends ConsumerWidget {
       splitScreenMode: true,
       builder: (context, child) {
         return MaterialApp.router(
-          title: 'Iris Chat',
+          title: 'iris chat',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
-          themeMode: ThemeMode.system,
+          themeMode: ThemeMode.dark,
           routerConfig: router,
         );
       },

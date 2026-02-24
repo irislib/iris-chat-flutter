@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
 import 'package:iris_chat/config/providers/nostr_provider.dart';
+import 'package:iris_chat/core/ffi/models/send_text_with_inner_id_result.dart';
 import 'package:iris_chat/core/services/nostr_service.dart';
 import 'package:iris_chat/core/services/profile_service.dart';
 import 'package:iris_chat/core/services/session_manager_service.dart';
@@ -11,6 +12,7 @@ import 'package:iris_chat/features/chat/domain/models/message.dart';
 import 'package:iris_chat/features/chat/domain/models/session.dart';
 import 'package:iris_chat/features/chat/presentation/screens/chat_screen.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 import '../test_helpers.dart';
 
@@ -21,7 +23,10 @@ class MockMessageLocalDatasource extends Mock
     implements MessageLocalDatasource {}
 
 class MockNostrService extends Mock implements NostrService {}
+
 class MockSessionManagerService extends Mock implements SessionManagerService {}
+
+class MockProfileService extends Mock implements ProfileService {}
 
 void main() {
   late MockSessionLocalDatasource mockSessionDatasource;
@@ -32,7 +37,8 @@ void main() {
   const testSessionId = 'test-session-123';
   final testSession = ChatSession(
     id: testSessionId,
-    recipientPubkeyHex: 'abcd1234567890abcd1234567890abcdef123456',
+    recipientPubkeyHex:
+        'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
     recipientName: 'Alice',
     createdAt: DateTime.now(),
     isInitiator: true,
@@ -46,34 +52,72 @@ void main() {
   });
 
   setUpAll(() {
-    registerFallbackValue(ChatMessage(
-      id: 'fallback',
-      sessionId: 'session',
-      text: 'text',
-      timestamp: DateTime.now(),
-      direction: MessageDirection.outgoing,
-    ));
+    registerFallbackValue(
+      ChatMessage(
+        id: 'fallback',
+        sessionId: 'session',
+        text: 'text',
+        timestamp: DateTime.now(),
+        direction: MessageDirection.outgoing,
+      ),
+    );
     registerFallbackValue(MessageStatus.sent);
   });
 
   Widget buildChatScreen({
     List<ChatMessage> messages = const [],
     ChatSession? session,
+    void Function(SessionNotifier notifier)? onSessionNotifierCreated,
   }) {
     final effectiveSession = session ?? testSession;
 
-    when(() => mockSessionDatasource.getAllSessions()).thenAnswer(
-      (_) async => [effectiveSession],
+    when(
+      () => mockSessionDatasource.getAllSessions(),
+    ).thenAnswer((_) async => [effectiveSession]);
+    when(
+      () => mockSessionDatasource.getSession(any()),
+    ).thenAnswer((_) async => effectiveSession);
+    when(
+      () => mockMessageDatasource.getMessagesForSession(
+        any(),
+        limit: any(named: 'limit'),
+        beforeId: any(named: 'beforeId'),
+      ),
+    ).thenAnswer((_) async => messages);
+    when(
+      () => mockMessageDatasource.updateIncomingStatusByRumorId(any(), any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => mockSessionManagerService.sendReceipt(
+        recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+        receiptType: any(named: 'receiptType'),
+        messageIds: any(named: 'messageIds'),
+      ),
+    ).thenAnswer((_) async {});
+    when(
+      () => mockSessionManagerService.sendTyping(
+        recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+        expiresAtSeconds: any(named: 'expiresAtSeconds'),
+      ),
+    ).thenAnswer((_) async {});
+    when(
+      () => mockSessionManagerService.sendTextWithInnerId(
+        recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+        text: any(named: 'text'),
+        expiresAtSeconds: any(named: 'expiresAtSeconds'),
+      ),
+    ).thenAnswer(
+      (_) async => const SendTextWithInnerIdResult(
+        innerId: 'inner-id',
+        outerEventIds: ['outer-id'],
+      ),
     );
-    when(() => mockMessageDatasource.getMessagesForSession(
-          any(),
-          limit: any(named: 'limit'),
-          beforeId: any(named: 'beforeId'),
-        )).thenAnswer((_) async => messages);
-    when(() => mockSessionDatasource.updateMetadata(
-          any(),
-          unreadCount: any(named: 'unreadCount'),
-        )).thenAnswer((_) async {});
+    when(
+      () => mockSessionDatasource.updateMetadata(
+        any(),
+        unreadCount: any(named: 'unreadCount'),
+      ),
+    ).thenAnswer((_) async {});
 
     return createTestApp(
       const ChatScreen(sessionId: testSessionId),
@@ -81,15 +125,20 @@ void main() {
         sessionDatasourceProvider.overrideWithValue(mockSessionDatasource),
         messageDatasourceProvider.overrideWithValue(mockMessageDatasource),
         nostrServiceProvider.overrideWithValue(mockNostrService),
-        sessionManagerServiceProvider.overrideWithValue(mockSessionManagerService),
+        sessionManagerServiceProvider.overrideWithValue(
+          mockSessionManagerService,
+        ),
         sessionStateProvider.overrideWith((ref) {
-          final notifier =
-              SessionNotifier(mockSessionDatasource, ProfileService(mockNostrService));
+          final notifier = SessionNotifier(
+            mockSessionDatasource,
+            MockProfileService(),
+          );
           // Pre-populate the sessions
           notifier.state = SessionState(
             sessions: [effectiveSession],
             isLoading: false,
           );
+          onSessionNotifierCreated?.call(notifier);
           return notifier;
         }),
       ],
@@ -103,6 +152,13 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Alice'), findsOneWidget);
+      });
+
+      testWidgets('shows encrypted status', (tester) async {
+        await tester.pumpWidget(buildChatScreen());
+        await tester.pumpAndSettle();
+
+        expect(find.text('End-to-end encrypted'), findsAtLeastNWidgets(1));
       });
 
       testWidgets('shows info button', (tester) async {
@@ -128,6 +184,72 @@ void main() {
         );
         expect(find.byIcon(Icons.lock_outline), findsOneWidget);
       });
+
+      testWidgets(
+        'shows notification when disappearing messages setting changes',
+        (tester) async {
+          SessionNotifier? sessionNotifier;
+          await tester.pumpWidget(
+            buildChatScreen(
+              messages: const [],
+              onSessionNotifierCreated: (notifier) =>
+                  sessionNotifier = notifier,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          sessionNotifier!.state = sessionNotifier!.state.copyWith(
+            sessions: [testSession.copyWith(messageTtlSeconds: 3600)],
+          );
+
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+
+          expect(
+            find.text('Disappearing messages set to 1 hour'),
+            findsOneWidget,
+          );
+        },
+      );
+
+      testWidgets(
+        'renders disappearing setting notice inside message timeline',
+        (tester) async {
+          SessionNotifier? sessionNotifier;
+          final messages = [
+            ChatMessage(
+              id: 'msg-1',
+              sessionId: testSessionId,
+              text: 'hello',
+              timestamp: DateTime.now(),
+              direction: MessageDirection.incoming,
+              status: MessageStatus.delivered,
+            ),
+          ];
+          await tester.pumpWidget(
+            buildChatScreen(
+              messages: messages,
+              onSessionNotifierCreated: (notifier) =>
+                  sessionNotifier = notifier,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          sessionNotifier!.state = sessionNotifier!.state.copyWith(
+            sessions: [testSession.copyWith(messageTtlSeconds: 3600)],
+          );
+
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+
+          final notice = find.text('Disappearing messages set to 1 hour');
+          expect(notice, findsOneWidget);
+          expect(
+            find.descendant(of: find.byType(ListView), matching: notice),
+            findsOneWidget,
+          );
+        },
+      );
     });
 
     group('message list', () {
@@ -173,11 +295,9 @@ void main() {
         await tester.pumpWidget(buildChatScreen(messages: messages));
         await tester.pumpAndSettle();
 
-        final align = tester.widget<Align>(find.ancestor(
-          of: find.text('Outgoing message'),
-          matching: find.byType(Align),
-        ).first);
-        expect(align.alignment, Alignment.centerRight);
+        final bubbleRect = tester.getRect(find.text('Outgoing message'));
+        final screenWidth = tester.getSize(find.byType(Scaffold)).width;
+        expect(bubbleRect.center.dx, greaterThan(screenWidth * 0.6));
       });
 
       testWidgets('incoming messages align left', (tester) async {
@@ -195,11 +315,9 @@ void main() {
         await tester.pumpWidget(buildChatScreen(messages: messages));
         await tester.pumpAndSettle();
 
-        final align = tester.widget<Align>(find.ancestor(
-          of: find.text('Incoming message'),
-          matching: find.byType(Align),
-        ).first);
-        expect(align.alignment, Alignment.centerLeft);
+        final bubbleRect = tester.getRect(find.text('Incoming message'));
+        final screenWidth = tester.getSize(find.byType(Scaffold)).width;
+        expect(bubbleRect.center.dx, lessThan(screenWidth * 0.4));
       });
 
       testWidgets('shows check icon for sent messages', (tester) async {
@@ -238,6 +356,25 @@ void main() {
         expect(find.byIcon(Icons.done_all), findsOneWidget);
       });
 
+      testWidgets('shows blue double check for seen messages', (tester) async {
+        final messages = [
+          ChatMessage(
+            id: 'msg-1',
+            sessionId: testSessionId,
+            text: 'Seen message',
+            timestamp: DateTime.now(),
+            direction: MessageDirection.outgoing,
+            status: MessageStatus.seen,
+          ),
+        ];
+
+        await tester.pumpWidget(buildChatScreen(messages: messages));
+        await tester.pumpAndSettle();
+
+        final icon = tester.widget<Icon>(find.byIcon(Icons.done_all));
+        expect(icon.color, Colors.blue);
+      });
+
       testWidgets('shows error icon for failed messages', (tester) async {
         final messages = [
           ChatMessage(
@@ -256,8 +393,7 @@ void main() {
         expect(find.byIcon(Icons.error_outline), findsOneWidget);
       });
 
-      testWidgets('shows loading indicator for pending messages',
-          (tester) async {
+      testWidgets('shows clock icon for pending messages', (tester) async {
         final messages = [
           ChatMessage(
             id: 'msg-1',
@@ -270,18 +406,9 @@ void main() {
         ];
 
         await tester.pumpWidget(buildChatScreen(messages: messages));
-        await tester.pump();
+        await tester.pumpAndSettle();
 
-        // Find small circular progress indicator (status icon)
-        expect(
-          find.byWidgetPredicate(
-            (widget) =>
-                widget is SizedBox &&
-                widget.width == 12 &&
-                widget.height == 12,
-          ),
-          findsWidgets,
-        );
+        expect(find.byIcon(Icons.schedule), findsOneWidget);
       });
     });
 
@@ -292,6 +419,14 @@ void main() {
 
         expect(find.byType(TextField), findsOneWidget);
         expect(find.text('Message'), findsOneWidget);
+      });
+
+      testWidgets('autofocuses message field on open', (tester) async {
+        await tester.pumpWidget(buildChatScreen());
+        await tester.pumpAndSettle();
+
+        final editable = tester.widget<EditableText>(find.byType(EditableText));
+        expect(editable.focusNode.hasFocus, isTrue);
       });
 
       testWidgets('shows send button', (tester) async {
@@ -324,6 +459,35 @@ void main() {
         // Note: Actually sending requires full session setup which is complex
         // This test verifies the input field works correctly
       });
+
+      testWidgets('scrolls to newest message after send', (tester) async {
+        final messages = List<ChatMessage>.generate(
+          40,
+          (i) => ChatMessage(
+            id: 'old-$i',
+            sessionId: testSessionId,
+            text: 'Old message $i',
+            timestamp: DateTime(2026, 1, 1, 12, i),
+            direction: i.isEven
+                ? MessageDirection.incoming
+                : MessageDirection.outgoing,
+            status: MessageStatus.delivered,
+          ),
+        );
+
+        await tester.pumpWidget(buildChatScreen(messages: messages));
+        await tester.pumpAndSettle();
+
+        const newMessage = 'Newest message from send';
+        await tester.enterText(find.byType(TextField), newMessage);
+        await tester.pump();
+        await tester.tap(find.byIcon(Icons.send));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(find.text(newMessage), findsOneWidget);
+      });
     });
 
     group('session info dialog', () {
@@ -336,7 +500,7 @@ void main() {
 
         expect(find.text('Public Key'), findsOneWidget);
         expect(find.text('Session Created'), findsOneWidget);
-        expect(find.text('Role'), findsOneWidget);
+        expect(find.text('Role'), findsNothing);
       });
 
       testWidgets('shows recipient name in dialog', (tester) async {
@@ -361,14 +525,16 @@ void main() {
         expect(find.text('End-to-end encrypted'), findsAtLeastNWidgets(1));
       });
 
-      testWidgets('shows role based on isInitiator', (tester) async {
+      testWidgets('shows npub public key in dialog', (tester) async {
         await tester.pumpWidget(buildChatScreen());
         await tester.pumpAndSettle();
 
         await tester.tap(find.byIcon(Icons.info_outline));
         await tester.pumpAndSettle();
 
-        expect(find.text('Initiator'), findsOneWidget);
+        final expectedNpub =
+            nostr.Nip19.encodePubkey(testSession.recipientPubkeyHex) as String;
+        expect(find.text(expectedNpub), findsOneWidget);
       });
 
       testWidgets('shows close button in dialog', (tester) async {
@@ -397,8 +563,9 @@ void main() {
     });
 
     group('date separators', () {
-      testWidgets('shows date separator between messages on different days',
-          (tester) async {
+      testWidgets('shows date separator between messages on different days', (
+        tester,
+      ) async {
         final yesterday = DateTime.now().subtract(const Duration(days: 1));
         final today = DateTime.now();
 

@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
+import '../../../../core/utils/invite_url.dart';
 
 class ScanInviteScreen extends ConsumerStatefulWidget {
   const ScanInviteScreen({super.key});
@@ -29,18 +31,61 @@ class _ScanInviteScreenState extends ConsumerState<ScanInviteScreen> {
   Future<void> _processInvite(String url) async {
     if (_isProcessing) return;
 
+    // Public chat links (npub/nprofile) are not Iris invites.
+    if (!looksLikeInviteUrl(url)) {
+      final pubkeyHex = extractNostrIdentityPubkeyHex(url);
+      if (pubkeyHex == null) {
+        _showError('That does not look like an invite link or chat link.');
+        return;
+      }
+
+      setState(() => _isProcessing = true);
+      try {
+        final session = await ref
+            .read(sessionStateProvider.notifier)
+            .ensureSessionForRecipient(pubkeyHex);
+        if (mounted) {
+          context.go('/chats/${session.id}');
+        }
+      } catch (e) {
+        if (mounted) {
+          _showError(e.toString());
+        }
+      } finally {
+        if (mounted) setState(() => _isProcessing = false);
+      }
+      return;
+    }
+
     setState(() => _isProcessing = true);
 
     try {
-      final sessionId =
-          await ref.read(inviteStateProvider.notifier).acceptInviteFromUrl(url);
+      final purpose = extractInvitePurpose(url);
+      if (purpose == 'link') {
+        final ok = await ref
+            .read(inviteStateProvider.notifier)
+            .acceptLinkInviteFromUrl(url);
+        if (ok && mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Device linked')));
+          context.pop();
+        } else if (mounted) {
+          final error = ref.read(inviteStateProvider).error;
+          _showError(error ?? 'Failed to link device');
+        }
+      } else {
+        final sessionId = await ref
+            .read(inviteStateProvider.notifier)
+            .acceptInviteFromUrl(url);
 
-      if (sessionId != null && mounted) {
-        // Navigate to the new chat
-        context.go('/chats/$sessionId');
-      } else if (mounted) {
-        final error = ref.read(inviteStateProvider).error;
-        _showError(error ?? 'Failed to accept invite');
+        if (sessionId != null && mounted) {
+          // Navigate to the new chat
+          context.go('/chats/$sessionId');
+        } else if (mounted) {
+          final error = ref.read(inviteStateProvider).error;
+          _showError(error ?? 'Failed to accept invite');
+        }
       }
     } finally {
       if (mounted) {
@@ -72,8 +117,9 @@ class _ScanInviteScreenState extends ConsumerState<ScanInviteScreen> {
   }
 
   bool _isValidInviteUrl(String url) {
-    // Check if it looks like an invite URL
-    return url.contains('iris.to') || url.contains('/invite/');
+    // Accept both Iris invites and public chat links (npub/nprofile).
+    return looksLikeInviteUrl(url) ||
+        extractNostrIdentityPubkeyHex(url) != null;
   }
 
   Future<void> _pasteFromClipboard() async {
@@ -148,10 +194,7 @@ class _ScanInviteScreenState extends ConsumerState<ScanInviteScreen> {
   Widget _buildScanner(ThemeData theme) {
     return Stack(
       children: [
-        MobileScanner(
-          controller: _scannerController,
-          onDetect: _onDetect,
-        ),
+        MobileScanner(controller: _scannerController, onDetect: _onDetect),
         // Overlay with cutout
         CustomPaint(
           painter: _ScannerOverlayPainter(
@@ -173,7 +216,8 @@ class _ScanInviteScreenState extends ConsumerState<ScanInviteScreen> {
             controller: _urlController,
             decoration: InputDecoration(
               labelText: 'Invite Link',
-              hintText: 'https://iris.to/invite/...',
+              hintText:
+                  'https://iris.to/invite/... or https://chat.iris.to/#npub...',
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.paste),
@@ -217,7 +261,12 @@ class _ScannerOverlayPainter extends CustomPainter {
     final cutoutSize = size.width * 0.7;
     final cutoutLeft = (size.width - cutoutSize) / 2;
     final cutoutTop = (size.height - cutoutSize) / 2;
-    final cutoutRect = Rect.fromLTWH(cutoutLeft, cutoutTop, cutoutSize, cutoutSize);
+    final cutoutRect = Rect.fromLTWH(
+      cutoutLeft,
+      cutoutTop,
+      cutoutSize,
+      cutoutSize,
+    );
 
     // Draw overlay with hole
     final path = Path()
@@ -248,13 +297,29 @@ class _ScannerOverlayPainter extends CustomPainter {
     const cornerLength = 30.0;
     final corners = [
       // Top left
-      [Offset(cutoutLeft, cutoutTop + cornerLength), Offset(cutoutLeft, cutoutTop), Offset(cutoutLeft + cornerLength, cutoutTop)],
+      [
+        Offset(cutoutLeft, cutoutTop + cornerLength),
+        Offset(cutoutLeft, cutoutTop),
+        Offset(cutoutLeft + cornerLength, cutoutTop),
+      ],
       // Top right
-      [Offset(cutoutLeft + cutoutSize - cornerLength, cutoutTop), Offset(cutoutLeft + cutoutSize, cutoutTop), Offset(cutoutLeft + cutoutSize, cutoutTop + cornerLength)],
+      [
+        Offset(cutoutLeft + cutoutSize - cornerLength, cutoutTop),
+        Offset(cutoutLeft + cutoutSize, cutoutTop),
+        Offset(cutoutLeft + cutoutSize, cutoutTop + cornerLength),
+      ],
       // Bottom left
-      [Offset(cutoutLeft, cutoutTop + cutoutSize - cornerLength), Offset(cutoutLeft, cutoutTop + cutoutSize), Offset(cutoutLeft + cornerLength, cutoutTop + cutoutSize)],
+      [
+        Offset(cutoutLeft, cutoutTop + cutoutSize - cornerLength),
+        Offset(cutoutLeft, cutoutTop + cutoutSize),
+        Offset(cutoutLeft + cornerLength, cutoutTop + cutoutSize),
+      ],
       // Bottom right
-      [Offset(cutoutLeft + cutoutSize - cornerLength, cutoutTop + cutoutSize), Offset(cutoutLeft + cutoutSize, cutoutTop + cutoutSize), Offset(cutoutLeft + cutoutSize, cutoutTop + cutoutSize - cornerLength)],
+      [
+        Offset(cutoutLeft + cutoutSize - cornerLength, cutoutTop + cutoutSize),
+        Offset(cutoutLeft + cutoutSize, cutoutTop + cutoutSize),
+        Offset(cutoutLeft + cutoutSize, cutoutTop + cutoutSize - cornerLength),
+      ],
     ];
 
     for (final corner in corners) {

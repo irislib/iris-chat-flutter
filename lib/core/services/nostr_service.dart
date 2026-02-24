@@ -8,14 +8,25 @@ import 'logger_service.dart';
 /// Service for communicating with Nostr relays.
 class NostrService {
   NostrService({List<String>? relayUrls})
-      : _relayUrls = relayUrls ?? defaultRelays;
+    : _relayUrls = relayUrls ?? defaultRelays;
 
   final List<String> _relayUrls;
   final Map<String, WebSocketChannel> _connections = {};
   final Map<String, StreamSubscription<dynamic>> _relaySubscriptions = {};
   final Map<String, Set<String>> _activeSubscriptions = {};
+  // Desired subscriptions keyed by subscription id. These are replayed on (re)connect so
+  // the app keeps receiving events after reconnects, and so subscriptions issued before
+  // the websocket is connected aren't lost.
+  final Map<String, Map<String, dynamic>> _subscriptionFilters = {};
+
+  // Best-effort queue for publishes attempted while disconnected.
+  // This is intentionally small; events are content-addressed and can be re-sent.
+  final List<String> _pendingPublishes = <String>[];
+  static const int _maxPendingPublishes = 200;
+
   final _eventController = StreamController<NostrEvent>.broadcast();
-  final _connectionController = StreamController<RelayConnectionEvent>.broadcast();
+  final _connectionController =
+      StreamController<RelayConnectionEvent>.broadcast();
 
   bool _disposed = false;
   final Map<String, int> _reconnectAttempts = {};
@@ -26,7 +37,8 @@ class NostrService {
   Stream<NostrEvent> get events => _eventController.stream;
 
   /// Stream of connection status changes.
-  Stream<RelayConnectionEvent> get connectionEvents => _connectionController.stream;
+  Stream<RelayConnectionEvent> get connectionEvents =>
+      _connectionController.stream;
 
   /// Default relay URLs.
   static const defaultRelays = [
@@ -75,10 +87,13 @@ class NostrService {
 
       _relaySubscriptions[url] = subscription;
 
-      _connectionController.add(RelayConnectionEvent(
-        url: url,
-        status: RelayStatus.connected,
-      ));
+      _connectionController.add(
+        RelayConnectionEvent(url: url, status: RelayStatus.connected),
+      );
+
+      // Replay known subscriptions and queued publishes.
+      _resubscribeRelay(url);
+      await _flushPendingPublishes();
 
       Logger.info(
         'Connected to relay',
@@ -94,11 +109,13 @@ class NostrService {
         data: {'url': url},
       );
 
-      _connectionController.add(RelayConnectionEvent(
-        url: url,
-        status: RelayStatus.error,
-        error: e.toString(),
-      ));
+      _connectionController.add(
+        RelayConnectionEvent(
+          url: url,
+          status: RelayStatus.error,
+          error: e.toString(),
+        ),
+      );
 
       _scheduleReconnect(url);
     }
@@ -116,20 +133,14 @@ class NostrService {
           if (message.length >= 3) {
             final subscriptionId = message[1] as String;
             final eventData = message[2] as Map<String, dynamic>;
-            final event = NostrEvent.fromJson(eventData, subscriptionId: subscriptionId);
-
-            Logger.debug(
-              'Received event',
-              category: LogCategory.nostr,
-              data: {
-                'relay': relay,
-                'kind': event.kind,
-                'subscriptionId': subscriptionId,
-              },
+            final event = NostrEvent.fromJson(
+              eventData,
+              subscriptionId: subscriptionId,
             );
 
             _eventController.add(event);
           }
+          break;
         case 'OK':
           if (message.length >= 3) {
             final eventId = message[1] as String;
@@ -142,10 +153,11 @@ class NostrService {
               data: {
                 'relay': relay,
                 'eventId': eventId.substring(0, 8),
-                if (reason != null) 'reason': reason,
+                'reason': ?reason,
               },
             );
           }
+          break;
         case 'EOSE':
           if (message.length >= 2) {
             final subscriptionId = message[1] as String;
@@ -155,6 +167,7 @@ class NostrService {
               data: {'relay': relay, 'subscriptionId': subscriptionId},
             );
           }
+          break;
         case 'NOTICE':
           if (message.length >= 2) {
             final notice = message[1] as String;
@@ -164,6 +177,7 @@ class NostrService {
               data: {'relay': relay, 'notice': notice},
             );
           }
+          break;
         case 'CLOSED':
           if (message.length >= 2) {
             final subscriptionId = message[1] as String;
@@ -174,6 +188,7 @@ class NostrService {
               data: {'relay': relay, 'subscriptionId': subscriptionId},
             );
           }
+          break;
       }
     } catch (e, st) {
       Logger.error(
@@ -196,11 +211,13 @@ class NostrService {
 
     _cleanupRelay(relay);
 
-    _connectionController.add(RelayConnectionEvent(
-      url: relay,
-      status: RelayStatus.error,
-      error: error.toString(),
-    ));
+    _connectionController.add(
+      RelayConnectionEvent(
+        url: relay,
+        status: RelayStatus.error,
+        error: error.toString(),
+      ),
+    );
 
     _scheduleReconnect(relay);
   }
@@ -214,10 +231,9 @@ class NostrService {
 
     _cleanupRelay(relay);
 
-    _connectionController.add(RelayConnectionEvent(
-      url: relay,
-      status: RelayStatus.disconnected,
-    ));
+    _connectionController.add(
+      RelayConnectionEvent(url: relay, status: RelayStatus.disconnected),
+    );
 
     _scheduleReconnect(relay);
   }
@@ -249,7 +265,11 @@ class NostrService {
     Logger.debug(
       'Scheduling reconnect',
       category: LogCategory.nostr,
-      data: {'relay': relay, 'attempt': attempts + 1, 'delaySeconds': delay.inSeconds},
+      data: {
+        'relay': relay,
+        'attempt': attempts + 1,
+        'delaySeconds': delay.inSeconds,
+      },
     );
 
     Future.delayed(delay, () {
@@ -263,6 +283,16 @@ class NostrService {
   Future<void> publishEvent(String eventJson) async {
     if (_disposed) {
       throw StateError('NostrService has been disposed');
+    }
+
+    if (_connections.isEmpty) {
+      _enqueuePendingPublish(eventJson);
+      Logger.warning(
+        'No relay connections; queued event for later publish',
+        category: LogCategory.nostr,
+        data: {'queuedCount': _pendingPublishes.length},
+      );
+      return;
     }
 
     final message = jsonEncode(['EVENT', jsonDecode(eventJson)]);
@@ -291,6 +321,7 @@ class NostrService {
     );
 
     if (successCount == 0 && _connections.isNotEmpty) {
+      _enqueuePendingPublish(eventJson);
       throw const NostrException('Failed to publish event to any relay');
     }
   }
@@ -302,35 +333,7 @@ class NostrService {
     }
 
     final subscriptionId = _generateSubscriptionId();
-    final message = jsonEncode(['REQ', subscriptionId, filter.toJson()]);
-
-    var successCount = 0;
-
-    for (final entry in _connections.entries) {
-      try {
-        entry.value.sink.add(message);
-        _activeSubscriptions[entry.key]?.add(subscriptionId);
-        successCount++;
-      } catch (e) {
-        Logger.error(
-          'Failed to subscribe on relay',
-          category: LogCategory.nostr,
-          error: e,
-          data: {'relay': entry.key},
-        );
-      }
-    }
-
-    Logger.info(
-      'Subscription created',
-      category: LogCategory.nostr,
-      data: {
-        'subscriptionId': subscriptionId,
-        'relayCount': successCount,
-        'filter': filter.toJson(),
-      },
-    );
-
+    subscribeWithIdRaw(subscriptionId, filter.toJson());
     return subscriptionId;
   }
 
@@ -340,8 +343,41 @@ class NostrService {
       throw StateError('NostrService has been disposed');
     }
 
-    final message = jsonEncode(['REQ', subscriptionId, filter.toJson()]);
+    return subscribeWithIdRaw(subscriptionId, filter.toJson());
+  }
 
+  /// Subscribe using a raw filter JSON map. Unknown keys/tags are preserved.
+  String subscribeWithIdRaw(
+    String subscriptionId,
+    Map<String, dynamic> filterJson,
+  ) {
+    if (_disposed) {
+      throw StateError('NostrService has been disposed');
+    }
+
+    final hadExisting = _subscriptionFilters.containsKey(subscriptionId);
+    _subscriptionFilters[subscriptionId] = filterJson;
+
+    // Some relays don't apply a second REQ with the same subscription id. Treat this as
+    // an "update": CLOSE then REQ so key-rotation / filter changes actually take effect.
+    if (hadExisting) {
+      final closeMessage = jsonEncode(['CLOSE', subscriptionId]);
+      for (final entry in _connections.entries) {
+        try {
+          entry.value.sink.add(closeMessage);
+          _activeSubscriptions[entry.key]?.remove(subscriptionId);
+        } catch (e) {
+          Logger.error(
+            'Failed to close subscription on relay (resubscribe)',
+            category: LogCategory.nostr,
+            error: e,
+            data: {'relay': entry.key, 'subscriptionId': subscriptionId},
+          );
+        }
+      }
+    }
+
+    final message = jsonEncode(['REQ', subscriptionId, filterJson]);
     var successCount = 0;
 
     for (final entry in _connections.entries) {
@@ -360,12 +396,21 @@ class NostrService {
     }
 
     Logger.info(
-      'Subscription created (custom id)',
+      hadExisting
+          ? 'Subscription updated (custom id)'
+          : 'Subscription created (custom id)',
       category: LogCategory.nostr,
       data: {
         'subscriptionId': subscriptionId,
         'relayCount': successCount,
-        'filter': filter.toJson(),
+        // Avoid logging full filter JSON (can be very large, e.g. big `#p` lists),
+        // which can flood debug consoles and inflate memory usage in debug builds.
+        'kinds': filterJson['kinds'],
+        'authorsCount': (filterJson['authors'] as List<dynamic>?)?.length,
+        'idsCount': (filterJson['ids'] as List<dynamic>?)?.length,
+        '#pCount': (filterJson['#p'] as List<dynamic>?)?.length,
+        '#eCount': (filterJson['#e'] as List<dynamic>?)?.length,
+        '#dCount': (filterJson['#d'] as List<dynamic>?)?.length,
       },
     );
 
@@ -376,6 +421,7 @@ class NostrService {
   void closeSubscription(String subscriptionId) {
     if (_disposed) return;
 
+    _subscriptionFilters.remove(subscriptionId);
     final message = jsonEncode(['CLOSE', subscriptionId]);
 
     for (final entry in _connections.entries) {
@@ -426,8 +472,55 @@ class NostrService {
     Logger.info('Disposing NostrService', category: LogCategory.nostr);
 
     await disconnect();
+    _subscriptionFilters.clear();
+    _pendingPublishes.clear();
     await _eventController.close();
     await _connectionController.close();
+  }
+
+  void _resubscribeRelay(String relay) {
+    final channel = _connections[relay];
+    if (channel == null) return;
+
+    // Snapshot; callers may add/remove subscriptions while we iterate.
+    final filters = Map<String, Map<String, dynamic>>.from(
+      _subscriptionFilters,
+    );
+    for (final entry in filters.entries) {
+      try {
+        channel.sink.add(jsonEncode(['REQ', entry.key, entry.value]));
+        _activeSubscriptions[relay]?.add(entry.key);
+      } catch (e) {
+        Logger.error(
+          'Failed to replay subscription on relay',
+          category: LogCategory.nostr,
+          error: e,
+          data: {'relay': relay, 'subscriptionId': entry.key},
+        );
+      }
+    }
+  }
+
+  void _enqueuePendingPublish(String eventJson) {
+    if (_pendingPublishes.length >= _maxPendingPublishes) {
+      _pendingPublishes.removeAt(0);
+    }
+    _pendingPublishes.add(eventJson);
+  }
+
+  Future<void> _flushPendingPublishes() async {
+    if (_pendingPublishes.isEmpty || _connections.isEmpty) return;
+
+    final pending = List<String>.from(_pendingPublishes);
+    _pendingPublishes.clear();
+
+    for (final eventJson in pending) {
+      try {
+        await publishEvent(eventJson);
+      } catch (_) {
+        // publishEvent re-queues on transport failure. We ignore here.
+      }
+    }
   }
 
   String _generateSubscriptionId() {
@@ -436,9 +529,7 @@ class NostrService {
 
   /// Get connection status.
   Map<String, bool> get connectionStatus {
-    return {
-      for (final url in _relayUrls) url: _connections.containsKey(url),
-    };
+    return {for (final url in _relayUrls) url: _connections.containsKey(url)};
   }
 
   /// Number of connected relays.
@@ -462,11 +553,7 @@ class RelayConnectionEvent {
 }
 
 /// Relay connection status.
-enum RelayStatus {
-  connected,
-  disconnected,
-  error,
-}
+enum RelayStatus { connected, disconnected, error }
 
 /// A Nostr event.
 class NostrEvent {
@@ -547,6 +634,21 @@ class NostrFilter {
     this.limit,
   });
 
+  factory NostrFilter.fromJson(Map<String, dynamic> json) {
+    return NostrFilter(
+      ids: (json['ids'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      authors: (json['authors'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList(),
+      kinds: (json['kinds'] as List<dynamic>?)?.map((e) => e as int).toList(),
+      eTags: (json['#e'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      pTags: (json['#p'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      since: json['since'] as int?,
+      until: json['until'] as int?,
+      limit: json['limit'] as int?,
+    );
+  }
+
   final List<String>? ids;
   final List<String>? authors;
   final List<int>? kinds;
@@ -567,20 +669,6 @@ class NostrFilter {
     if (until != null) json['until'] = until;
     if (limit != null) json['limit'] = limit;
     return json;
-  }
-
-  factory NostrFilter.fromJson(Map<String, dynamic> json) {
-    return NostrFilter(
-      ids: (json['ids'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
-      authors:
-          (json['authors'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
-      kinds: (json['kinds'] as List<dynamic>?)?.map((e) => e as int).toList(),
-      eTags: (json['#e'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
-      pTags: (json['#p'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
-      since: json['since'] as int?,
-      until: json['until'] as int?,
-      limit: json['limit'] as int?,
-    );
   }
 }
 

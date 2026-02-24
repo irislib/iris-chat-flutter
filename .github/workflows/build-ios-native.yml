@@ -3,8 +3,8 @@ name: Build iOS Native Library
 on:
   workflow_dispatch:
   push:
-    paths:
-      - '.github/workflows/build-ios-native.yml'
+    tags:
+      - 'v*'
 
 jobs:
   build-ndr-ffi:

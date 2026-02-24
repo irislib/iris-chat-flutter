@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/auth/presentation/screens/link_device_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/chat/presentation/screens/chat_list_screen.dart';
 import '../features/chat/presentation/screens/chat_screen.dart';
+import '../features/chat/presentation/screens/create_group_screen.dart';
+import '../features/chat/presentation/screens/group_chat_screen.dart';
+import '../features/chat/presentation/screens/group_info_screen.dart';
 import '../features/chat/presentation/screens/new_chat_screen.dart';
 import '../features/invite/presentation/screens/create_invite_screen.dart';
 import '../features/invite/presentation/screens/scan_invite_screen.dart';
@@ -30,7 +34,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final isAuthenticated = authState.isAuthenticated;
-      final isAuthRoute = state.matchedLocation == '/login';
+      final isAuthRoute =
+          state.matchedLocation == '/login' || state.matchedLocation == '/link';
 
       if (!isAuthenticated && !isAuthRoute) {
         return '/login';
@@ -44,6 +49,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/link',
+        builder: (context, state) => const LinkDeviceScreen(),
       ),
       GoRoute(
         path: '/',
@@ -84,6 +93,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/invite/scan',
         builder: (context, state) => const ScanInviteScreen(),
+      ),
+      GoRoute(
+        path: '/groups/new',
+        builder: (context, state) => const CreateGroupScreen(),
+      ),
+      GoRoute(
+        path: '/groups/:id',
+        builder: (context, state) => GroupChatScreen(
+          groupId: state.pathParameters['id']!,
+        ),
+        routes: [
+          GoRoute(
+            path: 'info',
+            builder: (context, state) => GroupInfoScreen(
+              groupId: state.pathParameters['id']!,
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: '/settings',

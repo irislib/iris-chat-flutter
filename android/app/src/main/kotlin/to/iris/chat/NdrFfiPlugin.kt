@@ -49,6 +49,12 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
                 "version" -> handleVersion(result)
                 "generateKeypair" -> handleGenerateKeypair(result)
                 "derivePublicKey" -> handleDerivePublicKey(call, result)
+                "hashtreeNhashFromFile" -> handleHashtreeNhashFromFile(call, result)
+                "hashtreeUploadFile" -> handleHashtreeUploadFile(call, result)
+                "hashtreeDownloadBytes" -> handleHashtreeDownloadBytes(call, result)
+                "hashtreeDownloadToFile" -> handleHashtreeDownloadToFile(call, result)
+                "createSignedAppKeysEvent" -> handleCreateSignedAppKeysEvent(call, result)
+                "parseAppKeysEvent" -> handleParseAppKeysEvent(call, result)
                 "createInvite" -> handleCreateInvite(call, result)
                 "inviteFromUrl" -> handleInviteFromUrl(call, result)
                 "inviteFromEventJson" -> handleInviteFromEventJson(call, result)
@@ -57,8 +63,12 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
                 "inviteToEventJson" -> handleInviteToEventJson(call, result)
                 "inviteSerialize" -> handleInviteSerialize(call, result)
                 "inviteAccept" -> handleInviteAccept(call, result)
+                "inviteAcceptWithOwner" -> handleInviteAcceptWithOwner(call, result)
+                "inviteSetPurpose" -> handleInviteSetPurpose(call, result)
+                "inviteSetOwnerPubkeyHex" -> handleInviteSetOwnerPubkeyHex(call, result)
                 "inviteGetInviterPubkeyHex" -> handleInviteGetInviterPubkeyHex(call, result)
                 "inviteGetSharedSecretHex" -> handleInviteGetSharedSecretHex(call, result)
+                "inviteProcessResponse" -> handleInviteProcessResponse(call, result)
                 "inviteDispose" -> handleInviteDispose(call, result)
                 "sessionFromStateJson" -> handleSessionFromStateJson(call, result)
                 "sessionInit" -> handleSessionInit(call, result)
@@ -71,13 +81,27 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
                 "sessionManagerNew" -> handleSessionManagerNew(call, result)
                 "sessionManagerNewWithStoragePath" -> handleSessionManagerNewWithStoragePath(call, result)
                 "sessionManagerInit" -> handleSessionManagerInit(call, result)
+                "sessionManagerAcceptInviteFromUrl" -> handleSessionManagerAcceptInviteFromUrl(call, result)
+                "sessionManagerAcceptInviteFromEventJson" -> handleSessionManagerAcceptInviteFromEventJson(call, result)
                 "sessionManagerSendText" -> handleSessionManagerSendText(call, result)
+                "sessionManagerSendTextWithInnerId" -> handleSessionManagerSendTextWithInnerId(call, result)
+                "sessionManagerSendEventWithInnerId" -> handleSessionManagerSendEventWithInnerId(call, result)
+                "sessionManagerGroupUpsert" -> handleSessionManagerGroupUpsert(call, result)
+                "sessionManagerGroupRemove" -> handleSessionManagerGroupRemove(call, result)
+                "sessionManagerGroupKnownSenderEventPubkeys" -> handleSessionManagerGroupKnownSenderEventPubkeys(call, result)
+                "sessionManagerGroupSendEvent" -> handleSessionManagerGroupSendEvent(call, result)
+                "sessionManagerGroupHandleIncomingSessionEvent" -> handleSessionManagerGroupHandleIncomingSessionEvent(call, result)
+                "sessionManagerGroupHandleOuterEvent" -> handleSessionManagerGroupHandleOuterEvent(call, result)
+                "sessionManagerSendReceipt" -> handleSessionManagerSendReceipt(call, result)
+                "sessionManagerSendTyping" -> handleSessionManagerSendTyping(call, result)
+                "sessionManagerSendReaction" -> handleSessionManagerSendReaction(call, result)
                 "sessionManagerImportSessionState" -> handleSessionManagerImportSessionState(call, result)
                 "sessionManagerGetActiveSessionState" -> handleSessionManagerGetActiveSessionState(call, result)
                 "sessionManagerProcessEvent" -> handleSessionManagerProcessEvent(call, result)
                 "sessionManagerDrainEvents" -> handleSessionManagerDrainEvents(call, result)
                 "sessionManagerGetDeviceId" -> handleSessionManagerGetDeviceId(call, result)
                 "sessionManagerGetOurPubkeyHex" -> handleSessionManagerGetOurPubkeyHex(call, result)
+                "sessionManagerGetOwnerPubkeyHex" -> handleSessionManagerGetOwnerPubkeyHex(call, result)
                 "sessionManagerGetTotalSessions" -> handleSessionManagerGetTotalSessions(call, result)
                 "sessionManagerDispose" -> handleSessionManagerDispose(call, result)
                 else -> result.notImplemented()
@@ -111,10 +135,85 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val privkeyHex = call.argument<String>("privkeyHex")
             ?: throw IllegalArgumentException("Missing privkeyHex")
 
-        // Generate a keypair and use secp256k1 to derive public key
-        // For now, we'll generate a new keypair and return its public key
-        // TODO: Add derivePublicKey to ndr-ffi Rust library
-        result.error("NotImplemented", "derivePublicKey not yet in ndr-ffi library", null)
+        result.success(derivePublicKey(privkeyHex))
+    }
+
+    private fun handleHashtreeNhashFromFile(call: MethodCall, result: Result) {
+        val filePath = call.argument<String>("filePath")
+            ?: throw IllegalArgumentException("Missing filePath")
+
+        result.success(hashtreeNhashFromFile(filePath))
+    }
+
+    private fun handleHashtreeUploadFile(call: MethodCall, result: Result) {
+        val privkeyHex = call.argument<String>("privkeyHex")
+            ?: throw IllegalArgumentException("Missing privkeyHex")
+        val filePath = call.argument<String>("filePath")
+            ?: throw IllegalArgumentException("Missing filePath")
+        val readServers = call.argument<List<String>>("readServers") ?: emptyList()
+        val writeServers = call.argument<List<String>>("writeServers") ?: emptyList()
+
+        result.success(
+            hashtreeUploadFile(
+                privkeyHex = privkeyHex,
+                filePath = filePath,
+                readServers = readServers,
+                writeServers = writeServers,
+            ),
+        )
+    }
+
+    private fun handleHashtreeDownloadBytes(call: MethodCall, result: Result) {
+        val nhash = call.argument<String>("nhash")
+            ?: throw IllegalArgumentException("Missing nhash")
+        val readServers = call.argument<List<String>>("readServers") ?: emptyList()
+
+        result.success(hashtreeDownloadBytes(nhash, readServers))
+    }
+
+    private fun handleHashtreeDownloadToFile(call: MethodCall, result: Result) {
+        val nhash = call.argument<String>("nhash")
+            ?: throw IllegalArgumentException("Missing nhash")
+        val outputPath = call.argument<String>("outputPath")
+            ?: throw IllegalArgumentException("Missing outputPath")
+        val readServers = call.argument<List<String>>("readServers") ?: emptyList()
+
+        hashtreeDownloadToFile(nhash, outputPath, readServers)
+        result.success(null)
+    }
+
+    // MARK: - AppKeys
+
+    private fun handleCreateSignedAppKeysEvent(call: MethodCall, result: Result) {
+        val ownerPubkeyHex = call.argument<String>("ownerPubkeyHex")
+            ?: throw IllegalArgumentException("Missing ownerPubkeyHex")
+        val ownerPrivkeyHex = call.argument<String>("ownerPrivkeyHex")
+            ?: throw IllegalArgumentException("Missing ownerPrivkeyHex")
+
+        val devicesArg = call.argument<List<Any>>("devices") ?: emptyList()
+        val devices = devicesArg.mapNotNull { entry ->
+            @Suppress("UNCHECKED_CAST")
+            val map = entry as? Map<String, Any?> ?: return@mapNotNull null
+            val identity = map["identityPubkeyHex"] as? String ?: return@mapNotNull null
+            val createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L
+            FfiDeviceEntry(identity, createdAt.toULong())
+        }
+
+        val eventJson = createSignedAppKeysEvent(ownerPubkeyHex, ownerPrivkeyHex, devices)
+        result.success(eventJson)
+    }
+
+    private fun handleParseAppKeysEvent(call: MethodCall, result: Result) {
+        val eventJson = call.argument<String>("eventJson")
+            ?: throw IllegalArgumentException("Missing eventJson")
+
+        val devices = parseAppKeysEvent(eventJson).map { d ->
+            mapOf(
+                "identityPubkeyHex" to d.identityPubkeyHex,
+                "createdAt" to d.createdAt.toLong(),
+            )
+        }
+        result.success(devices)
     }
 
     // MARK: - Invite Creation
@@ -212,6 +311,76 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         result.success(mapOf(
             "session" to mapOf("id" to sessionId),
             "responseEventJson" to acceptResult.responseEventJson
+        ))
+    }
+
+    private fun handleInviteAcceptWithOwner(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val inviteePubkeyHex = call.argument<String>("inviteePubkeyHex")
+            ?: throw IllegalArgumentException("Missing inviteePubkeyHex")
+        val inviteePrivkeyHex = call.argument<String>("inviteePrivkeyHex")
+            ?: throw IllegalArgumentException("Missing inviteePrivkeyHex")
+        val deviceId = call.argument<String>("deviceId")
+        val ownerPubkeyHex = call.argument<String>("ownerPubkeyHex")
+
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        val acceptResult = invite.acceptWithOwner(inviteePubkeyHex, inviteePrivkeyHex, deviceId, ownerPubkeyHex)
+        val sessionId = generateHandleId()
+        sessionHandles[sessionId] = acceptResult.session
+        result.success(mapOf(
+            "session" to mapOf("id" to sessionId),
+            "responseEventJson" to acceptResult.responseEventJson
+        ))
+    }
+
+    private fun handleInviteSetPurpose(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val purpose = call.argument<String>("purpose")
+
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        invite.setPurpose(purpose)
+        result.success(null)
+    }
+
+    private fun handleInviteSetOwnerPubkeyHex(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val ownerPubkeyHex = call.argument<String>("ownerPubkeyHex")
+
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+        invite.setOwnerPubkeyHex(ownerPubkeyHex)
+        result.success(null)
+    }
+
+    private fun handleInviteProcessResponse(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val eventJson = call.argument<String>("eventJson")
+            ?: throw IllegalArgumentException("Missing eventJson")
+        val inviterPrivkeyHex = call.argument<String>("inviterPrivkeyHex")
+            ?: throw IllegalArgumentException("Missing inviterPrivkeyHex")
+
+        val invite = inviteHandles[id]
+            ?: throw IllegalArgumentException("Invite handle not found: $id")
+
+        val processResult = invite.processResponse(eventJson, inviterPrivkeyHex)
+        if (processResult == null) {
+            result.success(null)
+            return
+        }
+
+        val sessionId = generateHandleId()
+        sessionHandles[sessionId] = processResult.session
+        result.success(mapOf(
+            "session" to mapOf("id" to sessionId),
+            "inviteePubkeyHex" to processResult.inviteePubkeyHex,
+            "deviceId" to processResult.deviceId,
+            "ownerPubkeyHex" to processResult.ownerPubkeyHex,
         ))
     }
 
@@ -353,8 +522,9 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
             ?: throw IllegalArgumentException("Missing ourIdentityPrivkeyHex")
         val deviceId = call.argument<String>("deviceId")
             ?: throw IllegalArgumentException("Missing deviceId")
+        val ownerPubkeyHex = call.argument<String>("ownerPubkeyHex")
 
-        val manager = SessionManagerHandle(ourPubkeyHex, ourIdentityPrivkeyHex, deviceId)
+        val manager = SessionManagerHandle(ourPubkeyHex, ourIdentityPrivkeyHex, deviceId, ownerPubkeyHex)
         val id = generateHandleId()
         sessionManagerHandles[id] = manager
         result.success(mapOf("id" to id))
@@ -369,12 +539,14 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
             ?: throw IllegalArgumentException("Missing deviceId")
         val storagePath = call.argument<String>("storagePath")
             ?: throw IllegalArgumentException("Missing storagePath")
+        val ownerPubkeyHex = call.argument<String>("ownerPubkeyHex")
 
         val manager = SessionManagerHandle.newWithStoragePath(
             ourPubkeyHex,
             ourIdentityPrivkeyHex,
             deviceId,
             storagePath,
+            ownerPubkeyHex,
         )
         val id = generateHandleId()
         sessionManagerHandles[id] = manager
@@ -391,6 +563,46 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         result.success(null)
     }
 
+    private fun handleSessionManagerAcceptInviteFromUrl(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val inviteUrl = call.argument<String>("inviteUrl")
+            ?: throw IllegalArgumentException("Missing inviteUrl")
+        val ownerPubkeyHintHex = call.argument<String>("ownerPubkeyHintHex")
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val acceptResult = manager.acceptInviteFromUrl(inviteUrl, ownerPubkeyHintHex)
+        result.success(
+            mapOf(
+                "ownerPubkeyHex" to acceptResult.ownerPubkeyHex,
+                "inviterDevicePubkeyHex" to acceptResult.inviterDevicePubkeyHex,
+                "deviceId" to acceptResult.deviceId,
+                "createdNewSession" to acceptResult.createdNewSession,
+            ),
+        )
+    }
+
+    private fun handleSessionManagerAcceptInviteFromEventJson(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val eventJson = call.argument<String>("eventJson")
+            ?: throw IllegalArgumentException("Missing eventJson")
+        val ownerPubkeyHintHex = call.argument<String>("ownerPubkeyHintHex")
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val acceptResult = manager.acceptInviteFromEventJson(eventJson, ownerPubkeyHintHex)
+        result.success(
+            mapOf(
+                "ownerPubkeyHex" to acceptResult.ownerPubkeyHex,
+                "inviterDevicePubkeyHex" to acceptResult.inviterDevicePubkeyHex,
+                "deviceId" to acceptResult.deviceId,
+                "createdNewSession" to acceptResult.createdNewSession,
+            ),
+        )
+    }
+
     private fun handleSessionManagerSendText(call: MethodCall, result: Result) {
         val id = call.argument<String>("id")
             ?: throw IllegalArgumentException("Missing id")
@@ -398,10 +610,245 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
             ?: throw IllegalArgumentException("Missing recipientPubkeyHex")
         val text = call.argument<String>("text")
             ?: throw IllegalArgumentException("Missing text")
+        val expiresAtSeconds = (call.argument<Number>("expiresAtSeconds"))?.toLong()?.toULong()
 
         val manager = sessionManagerHandles[id]
             ?: throw IllegalArgumentException("SessionManager handle not found: $id")
-        val eventIds = manager.sendText(recipientPubkeyHex, text)
+        val eventIds = manager.sendText(recipientPubkeyHex, text, expiresAtSeconds)
+        result.success(eventIds)
+    }
+
+    private fun handleSessionManagerSendTextWithInnerId(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val recipientPubkeyHex = call.argument<String>("recipientPubkeyHex")
+            ?: throw IllegalArgumentException("Missing recipientPubkeyHex")
+        val text = call.argument<String>("text")
+            ?: throw IllegalArgumentException("Missing text")
+        val expiresAtSeconds = (call.argument<Number>("expiresAtSeconds"))?.toLong()?.toULong()
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val sendResult = manager.sendTextWithInnerId(recipientPubkeyHex, text, expiresAtSeconds)
+        result.success(mapOf(
+            "innerId" to sendResult.innerId,
+            "outerEventIds" to sendResult.outerEventIds,
+        ))
+    }
+
+    private fun handleSessionManagerSendEventWithInnerId(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val recipientPubkeyHex = call.argument<String>("recipientPubkeyHex")
+            ?: throw IllegalArgumentException("Missing recipientPubkeyHex")
+        val kind = call.argument<Int>("kind")
+            ?: throw IllegalArgumentException("Missing kind")
+        val content = call.argument<String>("content")
+            ?: throw IllegalArgumentException("Missing content")
+        val tagsJson = call.argument<String>("tagsJson")
+            ?: throw IllegalArgumentException("Missing tagsJson")
+        val createdAtSeconds = (call.argument<Number>("createdAtSeconds"))?.toLong()?.toULong()
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val sendResult = manager.sendEventWithInnerId(
+            recipientPubkeyHex,
+            kind.toUInt(),
+            content,
+            tagsJson,
+            createdAtSeconds,
+        )
+        result.success(
+            mapOf(
+                "innerId" to sendResult.innerId,
+                "outerEventIds" to sendResult.outerEventIds,
+            ),
+        )
+    }
+
+    private fun handleSessionManagerGroupUpsert(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        @Suppress("UNCHECKED_CAST")
+        val groupMap = call.argument<Map<String, Any?>>("group")
+            ?: throw IllegalArgumentException("Missing group")
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+
+        val members = (groupMap["members"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+        val admins = (groupMap["admins"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+
+        val group = FfiGroupData(
+            id = groupMap["id"] as? String ?: throw IllegalArgumentException("Missing group.id"),
+            name = groupMap["name"] as? String ?: throw IllegalArgumentException("Missing group.name"),
+            description = groupMap["description"] as? String,
+            picture = groupMap["picture"] as? String,
+            members = members,
+            admins = admins,
+            createdAtMs = (groupMap["createdAtMs"] as? Number)?.toLong()?.toULong() ?: 0UL,
+            secret = groupMap["secret"] as? String,
+            accepted = groupMap["accepted"] as? Boolean,
+        )
+        manager.groupUpsert(group)
+        result.success(null)
+    }
+
+    private fun handleSessionManagerGroupRemove(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val groupId = call.argument<String>("groupId")
+            ?: throw IllegalArgumentException("Missing groupId")
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        manager.groupRemove(groupId)
+        result.success(null)
+    }
+
+    private fun handleSessionManagerGroupKnownSenderEventPubkeys(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        result.success(manager.groupKnownSenderEventPubkeys())
+    }
+
+    private fun handleSessionManagerGroupSendEvent(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val groupId = call.argument<String>("groupId")
+            ?: throw IllegalArgumentException("Missing groupId")
+        val kind = call.argument<Int>("kind")
+            ?: throw IllegalArgumentException("Missing kind")
+        val content = call.argument<String>("content")
+            ?: throw IllegalArgumentException("Missing content")
+        val tagsJson = call.argument<String>("tagsJson")
+            ?: throw IllegalArgumentException("Missing tagsJson")
+        val nowMs = (call.argument<Number>("nowMs"))?.toLong()?.toULong()
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val sendResult = manager.groupSendEvent(groupId, kind.toUInt(), content, tagsJson, nowMs)
+        result.success(
+            mapOf(
+                "outerEventJson" to sendResult.outerEventJson,
+                "innerEventJson" to sendResult.innerEventJson,
+                "outerEventId" to sendResult.outerEventId,
+                "innerEventId" to sendResult.innerEventId,
+            ),
+        )
+    }
+
+    private fun handleSessionManagerGroupHandleIncomingSessionEvent(
+        call: MethodCall,
+        result: Result,
+    ) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val eventJson = call.argument<String>("eventJson")
+            ?: throw IllegalArgumentException("Missing eventJson")
+        val fromOwnerPubkeyHex = call.argument<String>("fromOwnerPubkeyHex")
+            ?: throw IllegalArgumentException("Missing fromOwnerPubkeyHex")
+        val fromSenderDevicePubkeyHex = call.argument<String>("fromSenderDevicePubkeyHex")
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val events = manager.groupHandleIncomingSessionEvent(
+            eventJson,
+            fromOwnerPubkeyHex,
+            fromSenderDevicePubkeyHex,
+        ).map { event ->
+            mapOf(
+                "groupId" to event.groupId,
+                "senderEventPubkeyHex" to event.senderEventPubkeyHex,
+                "senderDevicePubkeyHex" to event.senderDevicePubkeyHex,
+                "senderOwnerPubkeyHex" to event.senderOwnerPubkeyHex,
+                "outerEventId" to event.outerEventId,
+                "outerCreatedAt" to event.outerCreatedAt.toLong(),
+                "keyId" to event.keyId.toLong(),
+                "messageNumber" to event.messageNumber.toLong(),
+                "innerEventJson" to event.innerEventJson,
+                "innerEventId" to event.innerEventId,
+            )
+        }
+        result.success(events)
+    }
+
+    private fun handleSessionManagerGroupHandleOuterEvent(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val eventJson = call.argument<String>("eventJson")
+            ?: throw IllegalArgumentException("Missing eventJson")
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val event = manager.groupHandleOuterEvent(eventJson)
+        if (event == null) {
+            result.success(null)
+            return
+        }
+        result.success(
+            mapOf(
+                "groupId" to event.groupId,
+                "senderEventPubkeyHex" to event.senderEventPubkeyHex,
+                "senderDevicePubkeyHex" to event.senderDevicePubkeyHex,
+                "senderOwnerPubkeyHex" to event.senderOwnerPubkeyHex,
+                "outerEventId" to event.outerEventId,
+                "outerCreatedAt" to event.outerCreatedAt.toLong(),
+                "keyId" to event.keyId.toLong(),
+                "messageNumber" to event.messageNumber.toLong(),
+                "innerEventJson" to event.innerEventJson,
+                "innerEventId" to event.innerEventId,
+            ),
+        )
+    }
+
+    private fun handleSessionManagerSendReceipt(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val recipientPubkeyHex = call.argument<String>("recipientPubkeyHex")
+            ?: throw IllegalArgumentException("Missing recipientPubkeyHex")
+        val receiptType = call.argument<String>("receiptType")
+            ?: throw IllegalArgumentException("Missing receiptType")
+        val messageIds = call.argument<List<String>>("messageIds")
+            ?: throw IllegalArgumentException("Missing messageIds")
+        val expiresAtSeconds = (call.argument<Number>("expiresAtSeconds"))?.toLong()?.toULong()
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val eventIds = manager.sendReceipt(recipientPubkeyHex, receiptType, messageIds, expiresAtSeconds)
+        result.success(eventIds)
+    }
+
+    private fun handleSessionManagerSendTyping(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val recipientPubkeyHex = call.argument<String>("recipientPubkeyHex")
+            ?: throw IllegalArgumentException("Missing recipientPubkeyHex")
+        val expiresAtSeconds = (call.argument<Number>("expiresAtSeconds"))?.toLong()?.toULong()
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val eventIds = manager.sendTyping(recipientPubkeyHex, expiresAtSeconds)
+        result.success(eventIds)
+    }
+
+    private fun handleSessionManagerSendReaction(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val recipientPubkeyHex = call.argument<String>("recipientPubkeyHex")
+            ?: throw IllegalArgumentException("Missing recipientPubkeyHex")
+        val messageId = call.argument<String>("messageId")
+            ?: throw IllegalArgumentException("Missing messageId")
+        val emoji = call.argument<String>("emoji")
+            ?: throw IllegalArgumentException("Missing emoji")
+        val expiresAtSeconds = (call.argument<Number>("expiresAtSeconds"))?.toLong()?.toULong()
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val eventIds = manager.sendReaction(recipientPubkeyHex, messageId, emoji, expiresAtSeconds)
         result.success(eventIds)
     }
 
@@ -480,6 +927,15 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         val manager = sessionManagerHandles[id]
             ?: throw IllegalArgumentException("SessionManager handle not found: $id")
         result.success(manager.getOurPubkeyHex())
+    }
+
+    private fun handleSessionManagerGetOwnerPubkeyHex(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        result.success(manager.getOwnerPubkeyHex())
     }
 
     private fun handleSessionManagerGetTotalSessions(call: MethodCall, result: Result) {

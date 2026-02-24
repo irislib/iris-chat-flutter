@@ -64,6 +64,14 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
                 handleGenerateKeypair(result: result)
             case "derivePublicKey":
                 try handleDerivePublicKey(call: call, result: result)
+            case "hashtreeNhashFromFile":
+                try handleHashtreeNhashFromFile(call: call, result: result)
+            case "hashtreeUploadFile":
+                try handleHashtreeUploadFile(call: call, result: result)
+            case "hashtreeDownloadBytes":
+                try handleHashtreeDownloadBytes(call: call, result: result)
+            case "hashtreeDownloadToFile":
+                try handleHashtreeDownloadToFile(call: call, result: result)
             case "createInvite":
                 try handleCreateInvite(call: call, result: result)
             case "inviteFromUrl":
@@ -142,10 +150,10 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
         if NDR_FFI_ENABLED {
             // Uncomment when UniFFI bindings are integrated:
             // result(version())
-            result("0.0.39")
+            result("0.0.74")
         } else {
             // Return version string even in stub mode for compatibility
-            result("0.0.39-stub")
+            result("0.0.74-stub")
         }
     }
 
@@ -179,6 +187,101 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
             //     result(pubkeyHex)
             // } catch {
             //     throw NdrPluginError.ndrError(error.localizedDescription)
+            // }
+            result(notImplementedError())
+        } else {
+            result(notImplementedError())
+        }
+    }
+
+    private func handleHashtreeNhashFromFile(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let filePath = args["filePath"] as? String else {
+            throw NdrPluginError.invalidArguments("Missing filePath")
+        }
+        _ = filePath
+
+        if NDR_FFI_ENABLED {
+            // do {
+            //     result(try hashtreeNhashFromFile(filePath: filePath))
+            // } catch {
+            //     result(convertError(error))
+            // }
+            result(notImplementedError())
+        } else {
+            result(notImplementedError())
+        }
+    }
+
+    private func handleHashtreeUploadFile(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let privkeyHex = args["privkeyHex"] as? String,
+              let filePath = args["filePath"] as? String else {
+            throw NdrPluginError.invalidArguments("Missing privkeyHex or filePath")
+        }
+        _ = privkeyHex
+        _ = filePath
+        _ = args["readServers"] as? [String] ?? []
+        _ = args["writeServers"] as? [String] ?? []
+
+        if NDR_FFI_ENABLED {
+            // do {
+            //     let readServers = args["readServers"] as? [String] ?? []
+            //     let writeServers = args["writeServers"] as? [String] ?? []
+            //     result(try hashtreeUploadFile(
+            //         privkeyHex: privkeyHex,
+            //         filePath: filePath,
+            //         readServers: readServers,
+            //         writeServers: writeServers
+            //     ))
+            // } catch {
+            //     result(convertError(error))
+            // }
+            result(notImplementedError())
+        } else {
+            result(notImplementedError())
+        }
+    }
+
+    private func handleHashtreeDownloadBytes(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let nhash = args["nhash"] as? String else {
+            throw NdrPluginError.invalidArguments("Missing nhash")
+        }
+        _ = nhash
+        _ = args["readServers"] as? [String] ?? []
+
+        if NDR_FFI_ENABLED {
+            // do {
+            //     let readServers = args["readServers"] as? [String] ?? []
+            //     let bytes = try hashtreeDownloadBytes(nhash: nhash, readServers: readServers)
+            //     result(FlutterStandardTypedData(bytes: bytes))
+            // } catch {
+            //     result(convertError(error))
+            // }
+            result(notImplementedError())
+        } else {
+            result(notImplementedError())
+        }
+    }
+
+    private func handleHashtreeDownloadToFile(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let nhash = args["nhash"] as? String,
+              let outputPath = args["outputPath"] as? String else {
+            throw NdrPluginError.invalidArguments("Missing nhash or outputPath")
+        }
+        _ = nhash
+        _ = outputPath
+        _ = args["readServers"] as? [String] ?? []
+
+        if NDR_FFI_ENABLED {
+            // do {
+            //     let readServers = args["readServers"] as? [String] ?? []
+            //     try hashtreeDownloadToFile(nhash: nhash, outputPath: outputPath, readServers: readServers)
+            //     result(nil)
+            // } catch {
+            //     result(convertError(error))
             // }
             result(notImplementedError())
         } else {

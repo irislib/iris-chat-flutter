@@ -2,7 +2,12 @@
 library;
 
 export 'decrypt_result.dart';
+export 'ffi_device_entry.dart';
+export 'ffi_group_data.dart';
 export 'ffi_keypair.dart';
+export 'group_decrypted_result.dart';
+export 'group_send_result.dart';
 export 'ndr_exception.dart';
-export 'send_result.dart';
 export 'pubsub_event.dart';
+export 'send_result.dart';
+export 'send_text_with_inner_id_result.dart';

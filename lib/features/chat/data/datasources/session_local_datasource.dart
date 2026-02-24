@@ -1,6 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../../../../core/services/database_service.dart';
+import '../../../../core/utils/hashtree_attachments.dart';
+import '../../domain/models/message.dart';
 import '../../domain/models/session.dart';
 
 /// Local data source for chat sessions.
@@ -57,6 +59,20 @@ class SessionLocalDatasource {
     );
   }
 
+  /// Insert a session only if it doesn't already exist.
+  ///
+  /// This is useful for "public chat links" (npub/nprofile) where we want to
+  /// create a placeholder session in the UI without risking overwriting an
+  /// existing session's ratchet state/metadata.
+  Future<void> insertSessionIfAbsent(ChatSession session) async {
+    final db = await _db;
+    await db.insert(
+      'sessions',
+      _sessionToMap(session),
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
   /// Delete a session.
   Future<void> deleteSession(String id) async {
     final db = await _db;
@@ -84,6 +100,58 @@ class SessionLocalDatasource {
     if (updates.isNotEmpty) {
       await db.update('sessions', updates, where: 'id = ?', whereArgs: [id]);
     }
+  }
+
+  /// Recompute `last_message_*` and `unread_count` from the messages table.
+  ///
+  /// Useful after purging expired messages.
+  Future<void> recomputeDerivedFieldsFromMessages(String id) async {
+    final db = await _db;
+
+    // Last message (already excludes purged/expired rows since those are deleted).
+    final last = await db.query(
+      'messages',
+      columns: ['text', 'timestamp'],
+      where: 'session_id = ?',
+      whereArgs: [id],
+      orderBy: 'timestamp DESC',
+      limit: 1,
+    );
+
+    final unreadResult = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM messages WHERE session_id = ? AND direction = ? AND status != ?',
+      [id, MessageDirection.incoming.name, MessageStatus.seen.name],
+    );
+    final unread = Sqflite.firstIntValue(unreadResult) ?? 0;
+
+    if (last.isEmpty) {
+      await db.update(
+        'sessions',
+        <String, Object?>{
+          'last_message_at': null,
+          'last_message_preview': null,
+          'unread_count': unread,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return;
+    }
+
+    final text = last.first['text']?.toString() ?? '';
+    final preview = buildAttachmentAwarePreview(text);
+    final ts = last.first['timestamp'] as int?;
+
+    await db.update(
+      'sessions',
+      <String, Object?>{
+        'last_message_at': ts,
+        'last_message_preview': preview,
+        'unread_count': unread,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   /// Get the serialized state for a session.
@@ -125,6 +193,7 @@ class SessionLocalDatasource {
       inviteId: map['invite_id'] as String?,
       isInitiator: (map['is_initiator'] as int? ?? 0) == 1,
       serializedState: map['serialized_state'] as String?,
+      messageTtlSeconds: map['message_ttl_seconds'] as int?,
     );
   }
 
@@ -140,6 +209,7 @@ class SessionLocalDatasource {
       'invite_id': session.inviteId,
       'is_initiator': session.isInitiator ? 1 : 0,
       'serialized_state': session.serializedState,
+      'message_ttl_seconds': session.messageTtlSeconds,
     };
   }
 }

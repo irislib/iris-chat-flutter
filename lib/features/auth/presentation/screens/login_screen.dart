@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../config/providers/auth_provider.dart';
+import '../../../../config/providers/chat_provider.dart';
+import '../../../../config/providers/invite_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -22,6 +24,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _createIdentity() async {
+    // "Create new identity" must start from a clean local state so we don't
+    // leak prior-account chats into a brand new account.
+    await ref.read(databaseServiceProvider).deleteDatabase();
+    ref.invalidate(sessionStateProvider);
+    ref.invalidate(chatStateProvider);
+    ref.invalidate(groupStateProvider);
+    ref.invalidate(inviteStateProvider);
+
     await ref.read(authStateProvider.notifier).createIdentity();
     if (mounted) {
       final state = ref.read(authStateProvider);
@@ -59,18 +69,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             children: [
               const Spacer(),
               // Logo/Title
-              Icon(
-                Icons.chat_bubble_outline,
-                size: 80,
-                color: theme.colorScheme.primary,
-              ),
+              Image.asset('assets/icons/app_icon.png', width: 100, height: 100),
               const SizedBox(height: 24),
-              Text(
-                'Iris',
-                style: theme.textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+              RichText(
                 textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: theme.textTheme.headlineLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                  children: [
+                    TextSpan(
+                      text: 'iris',
+                      style: TextStyle(color: theme.colorScheme.primary),
+                    ),
+                    const TextSpan(text: ' chat'),
+                  ],
+                ),
               ),
               const SizedBox(height: 48),
 
@@ -146,6 +160,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       : () => setState(() => _showKeyInput = true),
                   icon: const Icon(Icons.key),
                   label: const Text('Import Existing Key'),
+                ),
+                const SizedBox(height: 12),
+                // Link device button (delegated device login)
+                TextButton.icon(
+                  onPressed: authState.isLoading
+                      ? null
+                      : () => context.push('/link'),
+                  icon: const Icon(Icons.devices),
+                  label: const Text('Link This Device'),
                 ),
               ],
               const Spacer(),

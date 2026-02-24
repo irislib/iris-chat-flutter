@@ -4,6 +4,7 @@ import 'package:iris_chat/core/services/session_manager_service.dart';
 import 'package:iris_chat/features/chat/data/datasources/message_local_datasource.dart';
 import 'package:iris_chat/features/chat/data/datasources/session_local_datasource.dart';
 import 'package:iris_chat/features/chat/domain/models/message.dart';
+import 'package:iris_chat/features/chat/domain/models/session.dart';
 import 'package:mocktail/mocktail.dart';
 
 class MockMessageLocalDatasource extends Mock
@@ -32,14 +33,16 @@ void main() {
   });
 
   setUpAll(() {
-    registerFallbackValue(ChatMessage(
-      id: 'fallback',
-      sessionId: 'session',
-      text: 'text',
-      timestamp: DateTime.now(),
-      direction: MessageDirection.outgoing,
-      status: MessageStatus.pending,
-    ));
+    registerFallbackValue(
+      ChatMessage(
+        id: 'fallback',
+        sessionId: 'session',
+        text: 'text',
+        timestamp: DateTime.now(),
+        direction: MessageDirection.outgoing,
+        status: MessageStatus.pending,
+      ),
+    );
     registerFallbackValue(MessageStatus.pending);
   });
 
@@ -83,10 +86,12 @@ void main() {
           ),
         ];
 
-        when(() => mockMessageDatasource.getMessagesForSession(
-              'session-1',
-              limit: any(named: 'limit'),
-            )).thenAnswer((_) async => messages);
+        when(
+          () => mockMessageDatasource.getMessagesForSession(
+            'session-1',
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) async => messages);
 
         await notifier.loadMessages('session-1');
 
@@ -94,10 +99,12 @@ void main() {
       });
 
       test('sets error on failure', () async {
-        when(() => mockMessageDatasource.getMessagesForSession(
-              any(),
-              limit: any(named: 'limit'),
-            )).thenThrow(Exception('Load failed'));
+        when(
+          () => mockMessageDatasource.getMessagesForSession(
+            any(),
+            limit: any(named: 'limit'),
+          ),
+        ).thenThrow(Exception('Load failed'));
 
         await notifier.loadMessages('session-1');
 
@@ -175,9 +182,9 @@ void main() {
           status: MessageStatus.pending,
         );
 
-        when(() => mockMessageDatasource.saveMessage(any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => mockMessageDatasource.saveMessage(any()),
+        ).thenAnswer((_) async {});
 
         notifier.addMessageOptimistic(message);
 
@@ -188,8 +195,9 @@ void main() {
           notifier.state.messages['session-1']!.first.status,
           MessageStatus.sent,
         );
-        verify(() => mockMessageDatasource.saveMessage(updatedMessage))
-            .called(1);
+        verify(
+          () => mockMessageDatasource.saveMessage(updatedMessage),
+        ).called(1);
       });
 
       test('removes message from sendingStates', () async {
@@ -202,14 +210,16 @@ void main() {
           status: MessageStatus.pending,
         );
 
-        when(() => mockMessageDatasource.saveMessage(any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => mockMessageDatasource.saveMessage(any()),
+        ).thenAnswer((_) async {});
 
         notifier.addMessageOptimistic(message);
         expect(notifier.state.sendingStates.containsKey('msg-1'), true);
 
-        await notifier.updateMessage(message.copyWith(status: MessageStatus.sent));
+        await notifier.updateMessage(
+          message.copyWith(status: MessageStatus.sent),
+        );
 
         expect(notifier.state.sendingStates.containsKey('msg-1'), false);
       });
@@ -226,12 +236,12 @@ void main() {
           status: MessageStatus.delivered,
         );
 
-        when(() => mockMessageDatasource.messageExists(any())).thenAnswer(
-          (_) async => false,
-        );
-        when(() => mockMessageDatasource.saveMessage(any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => mockMessageDatasource.messageExists(any()),
+        ).thenAnswer((_) async => false);
+        when(
+          () => mockMessageDatasource.saveMessage(any()),
+        ).thenAnswer((_) async {});
 
         await notifier.addReceivedMessage(message);
 
@@ -250,9 +260,9 @@ void main() {
           eventId: 'event-123',
         );
 
-        when(() => mockMessageDatasource.messageExists('event-123')).thenAnswer(
-          (_) async => true,
-        );
+        when(
+          () => mockMessageDatasource.messageExists('event-123'),
+        ).thenAnswer((_) async => true);
 
         await notifier.addReceivedMessage(message);
 
@@ -272,13 +282,12 @@ void main() {
           status: MessageStatus.sent,
         );
 
-        when(() => mockMessageDatasource.updateMessageStatus(
-              any(),
-              any(),
-            )).thenAnswer((_) async {});
-        when(() => mockMessageDatasource.saveMessage(any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => mockMessageDatasource.updateMessageStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockMessageDatasource.saveMessage(any()),
+        ).thenAnswer((_) async {});
 
         notifier.addMessageOptimistic(message);
 
@@ -293,10 +302,12 @@ void main() {
 
     group('clearError', () {
       test('clears error state', () async {
-        when(() => mockMessageDatasource.getMessagesForSession(
-              any(),
-              limit: any(named: 'limit'),
-            )).thenThrow(Exception('Error'));
+        when(
+          () => mockMessageDatasource.getMessagesForSession(
+            any(),
+            limit: any(named: 'limit'),
+          ),
+        ).thenThrow(Exception('Error'));
 
         await notifier.loadMessages('session-1');
         expect(notifier.state.error, isNotNull);
@@ -331,16 +342,20 @@ void main() {
           ),
         ];
 
-        when(() => mockMessageDatasource.getMessagesForSession(
-              'session-1',
-              limit: any(named: 'limit'),
-            )).thenAnswer((_) async => existingMessages);
+        when(
+          () => mockMessageDatasource.getMessagesForSession(
+            'session-1',
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) async => existingMessages);
 
-        when(() => mockMessageDatasource.getMessagesForSession(
-              'session-1',
-              limit: any(named: 'limit'),
-              beforeId: 'msg-2',
-            )).thenAnswer((_) async => olderMessages);
+        when(
+          () => mockMessageDatasource.getMessagesForSession(
+            'session-1',
+            limit: any(named: 'limit'),
+            beforeId: 'msg-2',
+          ),
+        ).thenAnswer((_) async => olderMessages);
 
         await notifier.loadMessages('session-1');
         await notifier.loadMoreMessages('session-1');
@@ -352,18 +367,662 @@ void main() {
       });
 
       test('calls loadMessages when no existing messages', () async {
-        when(() => mockMessageDatasource.getMessagesForSession(
-              'session-1',
-              limit: any(named: 'limit'),
-            )).thenAnswer((_) async => []);
+        when(
+          () => mockMessageDatasource.getMessagesForSession(
+            'session-1',
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) async => []);
 
         await notifier.loadMoreMessages('session-1');
 
-        verify(() => mockMessageDatasource.getMessagesForSession(
+        verify(
+          () => mockMessageDatasource.getMessagesForSession(
+            'session-1',
+            limit: any(named: 'limit'),
+          ),
+        ).called(1);
+      });
+    });
+
+    group('typing indicators', () {
+      test(
+        'notifyTyping sends kind-25 typing event via SessionManagerService',
+        () async {
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: 'peer-pubkey',
+            createdAt: DateTime.now(),
+          );
+
+          when(
+            () => mockSessionDatasource.getSession('session-1'),
+          ).thenAnswer((_) async => session);
+          when(
+            () => mockSessionManagerService.sendTyping(
+              recipientPubkeyHex: 'peer-pubkey',
+              expiresAtSeconds: any(named: 'expiresAtSeconds'),
+            ),
+          ).thenAnswer((_) async {});
+
+          await notifier.notifyTyping('session-1');
+
+          verify(
+            () => mockSessionManagerService.sendTyping(
+              recipientPubkeyHex: 'peer-pubkey',
+              expiresAtSeconds: null,
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
+        'notifyTyping does not send when typing indicators are disabled',
+        () async {
+          notifier.setOutboundSignalSettings(
+            typingIndicatorsEnabled: false,
+            deliveryReceiptsEnabled: true,
+            readReceiptsEnabled: true,
+          );
+
+          await notifier.notifyTyping('session-1');
+
+          verifyNever(
+            () => mockSessionManagerService.sendTyping(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              expiresAtSeconds: any(named: 'expiresAtSeconds'),
+            ),
+          );
+        },
+      );
+
+      test(
+        'notifyTypingStopped sends typing stop with expiration tag',
+        () async {
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: 'peer-pubkey',
+            createdAt: DateTime.now(),
+          );
+
+          when(
+            () => mockSessionDatasource.getSession('session-1'),
+          ).thenAnswer((_) async => session);
+          when(
+            () => mockSessionManagerService.sendTyping(
+              recipientPubkeyHex: 'peer-pubkey',
+              expiresAtSeconds: any(named: 'expiresAtSeconds'),
+            ),
+          ).thenAnswer((_) async {});
+
+          await notifier.notifyTypingStopped('session-1');
+
+          final captured = verify(
+            () => mockSessionManagerService.sendTyping(
+              recipientPubkeyHex: 'peer-pubkey',
+              expiresAtSeconds: captureAny(named: 'expiresAtSeconds'),
+            ),
+          ).captured;
+
+          expect(captured, hasLength(1));
+          expect(captured.first, isA<int>());
+          expect(captured.first as int, greaterThan(0));
+        },
+      );
+
+      test(
+        'typing state is set for both session id and recipient pubkey key',
+        () async {
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          final session = ChatSession(
+            id: 'legacy-session-id',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+
+          const typingRumorJson =
+              '{"id":"typing-alias","pubkey":"$peerPubkey","created_at":1700000000,"kind":25,"content":"typing","tags":[]}';
+
+          await notifier.receiveDecryptedMessage(peerPubkey, typingRumorJson);
+
+          expect(notifier.state.typingStates[session.id] ?? false, isTrue);
+          expect(notifier.state.typingStates[peerPubkey] ?? false, isTrue);
+        },
+      );
+
+      test(
+        'typing resolves to existing session via decrypted sender pubkey alias',
+        () async {
+          const ownerPubkey =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+          const peerOwnerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          const peerDevicePubkey =
+              '3333333333333333333333333333333333333333333333333333333333333333';
+
+          final session = ChatSession(
+            id: 'session-owner-key',
+            recipientPubkeyHex: peerOwnerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          when(
+            () => mockSessionManagerService.ownerPubkeyHex,
+          ).thenReturn(ownerPubkey);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerDevicePubkey),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerOwnerPubkey),
+          ).thenAnswer((_) async => session);
+
+          const typingRumorJson =
+              '{"id":"typing-device","pubkey":"$peerDevicePubkey","created_at":1700000000,"kind":25,"content":"typing","tags":[["p","$ownerPubkey"]]}';
+
+          await notifier.receiveDecryptedMessage(
+            peerOwnerPubkey,
+            typingRumorJson,
+          );
+
+          expect(notifier.state.typingStates[session.id] ?? false, isTrue);
+          expect(notifier.state.typingStates[peerOwnerPubkey] ?? false, isTrue);
+          expect(
+            notifier.state.typingStates[peerDevicePubkey] ?? false,
+            isFalse,
+          );
+        },
+      );
+    });
+
+    group('receipts preferences', () {
+      test(
+        'markSessionSeen updates local state without sending when read receipts disabled',
+        () async {
+          final incoming = ChatMessage(
+            id: 'msg-1',
+            sessionId: 'session-1',
+            text: 'hello',
+            timestamp: DateTime.now(),
+            direction: MessageDirection.incoming,
+            status: MessageStatus.delivered,
+            rumorId: 'rumor-1',
+          );
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: 'peer-pubkey',
+            createdAt: DateTime.now(),
+          );
+
+          notifier.setOutboundSignalSettings(
+            typingIndicatorsEnabled: true,
+            deliveryReceiptsEnabled: true,
+            readReceiptsEnabled: false,
+          );
+
+          when(
+            () => mockSessionDatasource.getSession('session-1'),
+          ).thenAnswer((_) async => session);
+          when(
+            () => mockMessageDatasource.getMessagesForSession(
               'session-1',
               limit: any(named: 'limit'),
-            )).called(1);
+            ),
+          ).thenAnswer((_) async => [incoming]);
+          when(
+            () => mockMessageDatasource.updateIncomingStatusByRumorId(
+              'rumor-1',
+              MessageStatus.seen,
+            ),
+          ).thenAnswer((_) async {});
+
+          await notifier.markSessionSeen('session-1');
+
+          verifyNever(
+            () => mockSessionManagerService.sendReceipt(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              receiptType: any(named: 'receiptType'),
+              messageIds: any(named: 'messageIds'),
+            ),
+          );
+          verify(
+            () => mockMessageDatasource.updateIncomingStatusByRumorId(
+              'rumor-1',
+              MessageStatus.seen,
+            ),
+          ).called(1);
+        },
+      );
+    });
+
+    group('receiveDecryptedMessage', () {
+      test(
+        'applies typing when event second matches last message second with ms precision',
+        () async {
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockMessageDatasource.saveMessage(any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionManagerService.sendReceipt(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              receiptType: any(named: 'receiptType'),
+              messageIds: any(named: 'messageIds'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+
+          const messageRumorJson =
+              '{"id":"msg-1","pubkey":"$peerPubkey","created_at":1700000000,"kind":14,"content":"hello","tags":[["ms","1700000000123"]]}';
+          const typingRumorJson =
+              '{"id":"typing-1","pubkey":"$peerPubkey","created_at":1700000000,"kind":25,"content":"typing","tags":[]}';
+
+          await notifier.receiveDecryptedMessage(peerPubkey, messageRumorJson);
+          expect(notifier.state.typingStates[session.id] ?? false, isFalse);
+
+          await notifier.receiveDecryptedMessage(peerPubkey, typingRumorJson);
+
+          expect(
+            notifier.state.typingStates[session.id],
+            isTrue,
+            reason:
+                'Typing should not be dropped when the last message timestamp has '
+                'millisecond precision but typing only has second precision.',
+          );
+        },
+      );
+
+      test(
+        'applies typing even when typing timestamp is older than latest message second',
+        () async {
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockMessageDatasource.saveMessage(any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionManagerService.sendReceipt(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              receiptType: any(named: 'receiptType'),
+              messageIds: any(named: 'messageIds'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+
+          const messageRumorJson =
+              '{"id":"msg-2","pubkey":"$peerPubkey","created_at":1700000001,"kind":14,"content":"hello","tags":[["ms","1700000001123"]]}';
+          const staleTypingRumorJson =
+              '{"id":"typing-2","pubkey":"$peerPubkey","created_at":1700000000,"kind":25,"content":"typing","tags":[]}';
+
+          await notifier.receiveDecryptedMessage(peerPubkey, messageRumorJson);
+          await notifier.receiveDecryptedMessage(
+            peerPubkey,
+            staleTypingRumorJson,
+          );
+
+          expect(
+            notifier.state.typingStates[session.id] ?? false,
+            isTrue,
+            reason:
+                'Typing events can arrive with older remote timestamps when clocks skew; '
+                'they should still be shown.',
+          );
+        },
+      );
+
+      test(
+        'does not suppress incoming typing because of a newer outgoing self message',
+        () async {
+          const myPubkey =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          when(
+            () => mockSessionManagerService.ownerPubkeyHex,
+          ).thenReturn(myPubkey);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockMessageDatasource.saveMessage(any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionManagerService.sendReceipt(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              receiptType: any(named: 'receiptType'),
+              messageIds: any(named: 'messageIds'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+
+          const outgoingSelfRumorJson =
+              '{"id":"msg-self","pubkey":"$myPubkey","created_at":1700000002,"kind":14,"content":"local echo","tags":[["p","$peerPubkey"],["ms","1700000002500"]]}';
+          const incomingTypingRumorJson =
+              '{"id":"typing-3","pubkey":"$peerPubkey","created_at":1700000001,"kind":25,"content":"typing","tags":[["ms","1700000001500"]]}';
+
+          await notifier.receiveDecryptedMessage(
+            myPubkey,
+            outgoingSelfRumorJson,
+          );
+          expect(notifier.state.typingStates[session.id] ?? false, isFalse);
+
+          await notifier.receiveDecryptedMessage(
+            peerPubkey,
+            incomingTypingRumorJson,
+          );
+
+          expect(
+            notifier.state.typingStates[session.id],
+            isTrue,
+            reason:
+                'A self/outgoing message should not make subsequent incoming typing '
+                'events look stale.',
+          );
+        },
+      );
+
+      test(
+        'does not clear typing when an older incoming message replay arrives',
+        () async {
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockMessageDatasource.saveMessage(any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionManagerService.sendReceipt(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              receiptType: any(named: 'receiptType'),
+              messageIds: any(named: 'messageIds'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+
+          const typingRumorJson =
+              '{"id":"typing-new","pubkey":"$peerPubkey","created_at":1700000005,"kind":25,"content":"typing","tags":[["ms","1700000005000"]]}';
+          const olderMessageRumorJson =
+              '{"id":"msg-old","pubkey":"$peerPubkey","created_at":1700000004,"kind":14,"content":"older replay","tags":[["ms","1700000004000"]]}';
+
+          await notifier.receiveDecryptedMessage(peerPubkey, typingRumorJson);
+          expect(notifier.state.typingStates[session.id] ?? false, isTrue);
+
+          await notifier.receiveDecryptedMessage(
+            peerPubkey,
+            olderMessageRumorJson,
+          );
+
+          expect(
+            notifier.state.typingStates[session.id] ?? false,
+            isTrue,
+            reason:
+                'Older replayed messages should not clear a newer typing indicator.',
+          );
+        },
+      );
+
+      test(
+        'does not auto-send delivered receipt when delivery receipts are disabled',
+        () async {
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          notifier.setOutboundSignalSettings(
+            typingIndicatorsEnabled: true,
+            deliveryReceiptsEnabled: false,
+            readReceiptsEnabled: true,
+          );
+
+          when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockMessageDatasource.saveMessage(any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+
+          const messageRumorJson =
+              '{"id":"msg-no-delivery","pubkey":"$peerPubkey","created_at":1700000002,"kind":14,"content":"hello","tags":[]}';
+
+          await notifier.receiveDecryptedMessage(peerPubkey, messageRumorJson);
+
+          verifyNever(
+            () => mockSessionManagerService.sendReceipt(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              receiptType: 'delivered',
+              messageIds: any(named: 'messageIds'),
+            ),
+          );
+        },
+      );
+
+      test('clears typing when receiving an expired typing stop rumor', () async {
+        const peerPubkey =
+            '2222222222222222222222222222222222222222222222222222222222222222';
+        final session = ChatSession(
+          id: 'session-1',
+          recipientPubkeyHex: peerPubkey,
+          createdAt: DateTime.now(),
+        );
+
+        when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+        when(
+          () => mockMessageDatasource.messageExists(any()),
+        ).thenAnswer((_) async => false);
+        when(
+          () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+        ).thenAnswer((_) async => session);
+
+        const typingStartRumorJson =
+            '{"id":"typing-start","pubkey":"$peerPubkey","created_at":1700000001,"kind":25,"content":"typing","tags":[]}';
+        const typingStopRumorJson =
+            '{"id":"typing-stop","pubkey":"$peerPubkey","created_at":1700000002,"kind":25,"content":"typing","tags":[["expiration","1"]]}';
+
+        await notifier.receiveDecryptedMessage(
+          peerPubkey,
+          typingStartRumorJson,
+        );
+        expect(notifier.state.typingStates[session.id] ?? false, isTrue);
+
+        await notifier.receiveDecryptedMessage(peerPubkey, typingStopRumorJson);
+        expect(notifier.state.typingStates[session.id] ?? false, isFalse);
       });
+
+      test(
+        'backfills outgoing eventId when receiving self-echo by rumor id',
+        () async {
+          const myPubkey =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          const rumorId = 'rumor-123';
+          const outerEventId = 'outer-456';
+
+          when(
+            () => mockSessionManagerService.ownerPubkeyHex,
+          ).thenReturn(myPubkey);
+
+          when(
+            () => mockMessageDatasource.messageExists(outerEventId),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockMessageDatasource.messageExists(rumorId),
+          ).thenAnswer((_) async => true);
+          when(
+            () => mockMessageDatasource.updateOutgoingEventIdByRumorId(
+              rumorId,
+              outerEventId,
+            ),
+          ).thenAnswer((_) async {});
+
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer(
+            (_) async => ChatSession(
+              id: peerPubkey,
+              recipientPubkeyHex: peerPubkey,
+              createdAt: DateTime.now(),
+            ),
+          );
+
+          final outgoing = ChatMessage(
+            id: 'local-1',
+            sessionId: peerPubkey,
+            text: 'hi',
+            timestamp: DateTime.now(),
+            direction: MessageDirection.outgoing,
+            status: MessageStatus.pending,
+            rumorId: rumorId,
+          );
+          notifier.addMessageOptimistic(outgoing);
+
+          const rumorJson =
+              '{"id":"$rumorId","pubkey":"$myPubkey","created_at":123,"kind":14,"content":"hi","tags":[["p","$peerPubkey"]]}';
+
+          final result = await notifier.receiveDecryptedMessage(
+            'ignored',
+            rumorJson,
+            eventId: outerEventId,
+            createdAt: 123,
+          );
+
+          expect(result, isNull);
+          verify(
+            () => mockMessageDatasource.updateOutgoingEventIdByRumorId(
+              rumorId,
+              outerEventId,
+            ),
+          ).called(1);
+
+          final updated = notifier.state.messages[peerPubkey]!.firstWhere(
+            (m) => m.id == 'local-1',
+          );
+          expect(updated.eventId, outerEventId);
+          expect(updated.status, MessageStatus.sent);
+        },
+      );
+    });
+
+    group('sendReaction', () {
+      test(
+        'uses SessionManagerService.sendReaction and updates local reactions',
+        () async {
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: 'peer-pubkey',
+            createdAt: DateTime.now(),
+            isInitiator: true,
+          );
+
+          when(
+            () => mockSessionDatasource.getSession('session-1'),
+          ).thenAnswer((_) async => session);
+          when(
+            () => mockSessionManagerService.sendReaction(
+              recipientPubkeyHex: 'peer-pubkey',
+              messageId: 'event-123',
+              emoji: '❤️',
+            ),
+          ).thenAnswer((_) async {});
+
+          notifier.state = notifier.state.copyWith(
+            messages: {
+              'session-1': [
+                ChatMessage(
+                  id: 'msg-1',
+                  sessionId: 'session-1',
+                  text: 'Hello',
+                  timestamp: DateTime.now(),
+                  direction: MessageDirection.outgoing,
+                  status: MessageStatus.sent,
+                  eventId: 'event-123',
+                  rumorId: 'rumor-123',
+                ),
+              ],
+            },
+          );
+
+          await notifier.sendReaction('session-1', 'msg-1', '❤️', 'my-pubkey');
+
+          verify(
+            () => mockSessionManagerService.sendReaction(
+              recipientPubkeyHex: 'peer-pubkey',
+              messageId: 'event-123',
+              emoji: '❤️',
+            ),
+          ).called(1);
+          verifyNever(
+            () => mockSessionManagerService.getActiveSessionState(any()),
+          );
+
+          final updated = notifier.state.messages['session-1']!.first;
+          expect(updated.reactions['❤️'], ['my-pubkey']);
+          expect(notifier.state.error, isNull);
+        },
+      );
     });
   });
 }

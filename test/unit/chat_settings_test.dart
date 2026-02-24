@@ -1,0 +1,72 @@
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:iris_chat/features/chat/domain/utils/chat_settings.dart';
+
+void main() {
+  group('chat settings', () {
+    test('parseChatSettingsContent accepts ttl seconds', () {
+      final parsed = parseChatSettingsContent(
+        '{"type":"chat-settings","v":1,"messageTtlSeconds":3600}',
+      );
+      expect(parsed, isNotNull);
+      expect(parsed!.messageTtlSeconds, 3600);
+    });
+
+    test('parseChatSettingsContent normalizes non-positive ttl to null', () {
+      final zero = parseChatSettingsContent(
+        '{"type":"chat-settings","v":1,"messageTtlSeconds":0}',
+      );
+      expect(zero, isNotNull);
+      expect(zero!.messageTtlSeconds, isNull);
+
+      final negative = parseChatSettingsContent(
+        '{"type":"chat-settings","v":1,"messageTtlSeconds":-5}',
+      );
+      expect(negative, isNotNull);
+      expect(negative!.messageTtlSeconds, isNull);
+    });
+
+    test('parseChatSettingsContent accepts null ttl', () {
+      final parsed = parseChatSettingsContent(
+        '{"type":"chat-settings","v":1,"messageTtlSeconds":null}',
+      );
+      expect(parsed, isNotNull);
+      expect(parsed!.messageTtlSeconds, isNull);
+    });
+
+    test('parseChatSettingsContent rejects invalid payloads', () {
+      expect(parseChatSettingsContent(''), isNull);
+      expect(parseChatSettingsContent('not-json'), isNull);
+      expect(
+        parseChatSettingsContent('{"type":"chat-settings","v":2}'),
+        isNull,
+      );
+      expect(parseChatSettingsContent('{"type":"nope","v":1}'), isNull);
+      expect(
+        parseChatSettingsContent(
+          '{"type":"chat-settings","v":1,"messageTtlSeconds":"3600"}',
+        ),
+        isNull,
+      );
+    });
+
+    test('chatSettingsTtlLabel formats presets and custom durations', () {
+      expect(chatSettingsTtlLabel(null), 'Off');
+      expect(chatSettingsTtlLabel(300), '5 minutes');
+      expect(chatSettingsTtlLabel(3600), '1 hour');
+      expect(chatSettingsTtlLabel(75), '1 minutes');
+      expect(chatSettingsTtlLabel(172800), '2 days');
+    });
+
+    test('chatSettingsChangedNotice formats human-readable change text', () {
+      expect(
+        chatSettingsChangedNotice(null),
+        'Disappearing messages turned off',
+      );
+      expect(
+        chatSettingsChangedNotice(3600),
+        'Disappearing messages set to 1 hour',
+      );
+    });
+  });
+}

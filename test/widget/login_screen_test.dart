@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_chat/config/providers/auth_provider.dart';
+import 'package:iris_chat/config/providers/chat_provider.dart';
+import 'package:iris_chat/core/services/database_service.dart';
 import 'package:iris_chat/features/auth/domain/models/identity.dart';
 import 'package:iris_chat/features/auth/domain/repositories/auth_repository.dart';
 import 'package:iris_chat/features/auth/presentation/screens/login_screen.dart';
@@ -10,11 +12,16 @@ import '../test_helpers.dart';
 
 class MockAuthRepository extends Mock implements AuthRepository {}
 
+class MockDatabaseService extends Mock implements DatabaseService {}
+
 void main() {
   late MockAuthRepository mockAuthRepo;
+  late MockDatabaseService mockDatabaseService;
 
   setUp(() {
     mockAuthRepo = MockAuthRepository();
+    mockDatabaseService = MockDatabaseService();
+    when(() => mockDatabaseService.deleteDatabase()).thenAnswer((_) async {});
   });
 
   Widget buildLoginScreen({AuthState? initialAuthState}) {
@@ -22,6 +29,7 @@ void main() {
       const LoginScreen(),
       overrides: [
         authRepositoryProvider.overrideWithValue(mockAuthRepo),
+        databaseServiceProvider.overrideWithValue(mockDatabaseService),
         if (initialAuthState != null)
           authStateProvider.overrideWith((ref) {
             final notifier = AuthNotifier(mockAuthRepo);
@@ -37,8 +45,9 @@ void main() {
         await tester.pumpWidget(buildLoginScreen());
         await tester.pumpAndSettle();
 
-        expect(find.byIcon(Icons.chat_bubble_outline), findsOneWidget);
-        expect(find.text('Iris'), findsOneWidget);
+        expect(find.byType(Image), findsOneWidget);
+        // Title is a RichText with "iris" and "chat" spans
+        expect(find.byType(RichText), findsWidgets);
       });
 
       testWidgets('shows create identity button', (tester) async {
@@ -96,9 +105,9 @@ void main() {
 
       testWidgets('login button calls login with entered key', (tester) async {
         // Use a completer to control when the login completes
-        when(() => mockAuthRepo.login(any())).thenAnswer(
-          (_) async => const Identity(pubkeyHex: testPubkeyHex),
-        );
+        when(
+          () => mockAuthRepo.login(any()),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
 
         await tester.pumpWidget(buildLoginScreen());
         await tester.pumpAndSettle();
@@ -143,31 +152,35 @@ void main() {
     });
 
     group('create identity', () {
-      testWidgets('create identity button calls createIdentity',
-          (tester) async {
-        when(() => mockAuthRepo.createIdentity()).thenAnswer(
-          (_) async => const Identity(pubkeyHex: testPubkeyHex),
-        );
+      testWidgets(
+        'create identity clears local data then calls createIdentity',
+        (tester) async {
+          when(
+            () => mockAuthRepo.createIdentity(),
+          ).thenThrow(Exception('create failed'));
 
-        await tester.pumpWidget(buildLoginScreen());
-        await tester.pumpAndSettle();
+          await tester.pumpWidget(buildLoginScreen());
+          await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Create New Identity'));
-        await tester.pump();
+          await tester.tap(find.text('Create New Identity'));
+          await tester.pump();
 
-        verify(() => mockAuthRepo.createIdentity()).called(1);
-      }, skip: true);
+          verifyInOrder([
+            () => mockDatabaseService.deleteDatabase(),
+            () => mockAuthRepo.createIdentity(),
+          ]);
+        },
+      );
     });
 
     group('loading state', () {
-      testWidgets('shows loading indicator when creating identity',
-          (tester) async {
-        when(() => mockAuthRepo.createIdentity()).thenAnswer(
-          (_) async {
-            await Future.delayed(const Duration(seconds: 1));
-            return const Identity(pubkeyHex: testPubkeyHex);
-          },
-        );
+      testWidgets('shows loading indicator when creating identity', (
+        tester,
+      ) async {
+        when(() => mockAuthRepo.createIdentity()).thenAnswer((_) async {
+          await Future.delayed(const Duration(seconds: 1));
+          return const Identity(pubkeyHex: testPubkeyHex);
+        });
 
         await tester.pumpWidget(buildLoginScreen());
         await tester.pumpAndSettle();
@@ -179,12 +192,10 @@ void main() {
       }, skip: true);
 
       testWidgets('disables buttons when loading', (tester) async {
-        when(() => mockAuthRepo.createIdentity()).thenAnswer(
-          (_) async {
-            await Future.delayed(const Duration(seconds: 1));
-            return const Identity(pubkeyHex: testPubkeyHex);
-          },
-        );
+        when(() => mockAuthRepo.createIdentity()).thenAnswer((_) async {
+          await Future.delayed(const Duration(seconds: 1));
+          return const Identity(pubkeyHex: testPubkeyHex);
+        });
 
         await tester.pumpWidget(buildLoginScreen());
         await tester.pumpAndSettle();
@@ -202,9 +213,9 @@ void main() {
 
     group('error handling', () {
       testWidgets('displays error message from state', (tester) async {
-        when(() => mockAuthRepo.login(any())).thenThrow(
-          const InvalidKeyException('Invalid key format'),
-        );
+        when(
+          () => mockAuthRepo.login(any()),
+        ).thenThrow(const InvalidKeyException('Invalid key format'));
 
         await tester.pumpWidget(buildLoginScreen());
         await tester.pumpAndSettle();
@@ -220,9 +231,9 @@ void main() {
       });
 
       testWidgets('error container has correct styling', (tester) async {
-        when(() => mockAuthRepo.login(any())).thenThrow(
-          const InvalidKeyException('Test error'),
-        );
+        when(
+          () => mockAuthRepo.login(any()),
+        ).thenThrow(const InvalidKeyException('Test error'));
 
         await tester.pumpWidget(buildLoginScreen());
         await tester.pumpAndSettle();

@@ -6,6 +6,18 @@ import 'package:mocktail/mocktail.dart';
 class MockFlutterSecureStorage extends Mock implements FlutterSecureStorage {}
 
 void main() {
+  group('Secure storage options', () {
+    test(
+      'macOS options include legacy + new data-protection keys set false',
+      () {
+        final map = defaultMacOsSecureStorageOptions.toMap();
+
+        expect(map['usesDataProtectionKeychain'], 'false');
+        expect(map['useDataProtectionKeyChain'], 'false');
+      },
+    );
+  });
+
   late SecureStorageService service;
   late MockFlutterSecureStorage mockStorage;
 
@@ -15,26 +27,62 @@ void main() {
   });
 
   group('SecureStorageService', () {
+    group('saveIdentity', () {
+      test('writes identity blob and deletes legacy keys', () async {
+        when(
+          () => mockStorage.write(
+            key: any(named: 'key'),
+            value: any(named: 'value'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockStorage.delete(key: any(named: 'key')),
+        ).thenAnswer((_) async {});
+
+        await service.saveIdentity(privkeyHex: 'priv', pubkeyHex: 'pub');
+
+        verify(
+          () => mockStorage.write(
+            key: 'iris_chat_identity',
+            value: '{"privkeyHex":"priv","pubkeyHex":"pub"}',
+          ),
+        ).called(1);
+        verify(() => mockStorage.delete(key: 'iris_chat_privkey')).called(1);
+        verify(() => mockStorage.delete(key: 'iris_chat_pubkey')).called(1);
+      });
+    });
+
     group('savePrivateKey', () {
       test('writes key to secure storage', () async {
-        when(() => mockStorage.write(
-              key: any(named: 'key'),
-              value: any(named: 'value'),
-            )).thenAnswer((_) async {});
+        when(
+          () => mockStorage.write(
+            key: any(named: 'key'),
+            value: any(named: 'value'),
+          ),
+        ).thenAnswer((_) async {});
 
         await service.savePrivateKey('abc123def456');
 
-        verify(() => mockStorage.write(
-              key: 'iris_chat_privkey',
-              value: 'abc123def456',
-            )).called(1);
+        verify(
+          () => mockStorage.write(
+            key: 'iris_chat_privkey',
+            value: 'abc123def456',
+          ),
+        ).called(1);
       });
     });
 
     group('getPrivateKey', () {
       test('returns stored key when exists', () async {
-        when(() => mockStorage.read(key: 'iris_chat_privkey'))
-            .thenAnswer((_) async => 'abc123');
+        when(
+          () => mockStorage.read(key: 'iris_chat_identity'),
+        ).thenAnswer((_) async => null);
+        when(
+          () => mockStorage.read(key: 'iris_chat_privkey'),
+        ).thenAnswer((_) async => 'abc123');
+        when(
+          () => mockStorage.read(key: 'iris_chat_pubkey'),
+        ).thenAnswer((_) async => null);
 
         final result = await service.getPrivateKey();
 
@@ -42,8 +90,15 @@ void main() {
       });
 
       test('returns null when key not found', () async {
-        when(() => mockStorage.read(key: 'iris_chat_privkey'))
-            .thenAnswer((_) async => null);
+        when(
+          () => mockStorage.read(key: 'iris_chat_identity'),
+        ).thenAnswer((_) async => null);
+        when(
+          () => mockStorage.read(key: 'iris_chat_privkey'),
+        ).thenAnswer((_) async => null);
+        when(
+          () => mockStorage.read(key: 'iris_chat_pubkey'),
+        ).thenAnswer((_) async => null);
 
         final result = await service.getPrivateKey();
 
@@ -53,24 +108,32 @@ void main() {
 
     group('savePublicKey', () {
       test('writes key to secure storage', () async {
-        when(() => mockStorage.write(
-              key: any(named: 'key'),
-              value: any(named: 'value'),
-            )).thenAnswer((_) async {});
+        when(
+          () => mockStorage.write(
+            key: any(named: 'key'),
+            value: any(named: 'value'),
+          ),
+        ).thenAnswer((_) async {});
 
         await service.savePublicKey('pubkey123');
 
-        verify(() => mockStorage.write(
-              key: 'iris_chat_pubkey',
-              value: 'pubkey123',
-            )).called(1);
+        verify(
+          () => mockStorage.write(key: 'iris_chat_pubkey', value: 'pubkey123'),
+        ).called(1);
       });
     });
 
     group('getPublicKey', () {
       test('returns stored key when exists', () async {
-        when(() => mockStorage.read(key: 'iris_chat_pubkey'))
-            .thenAnswer((_) async => 'pubkey123');
+        when(
+          () => mockStorage.read(key: 'iris_chat_identity'),
+        ).thenAnswer((_) async => null);
+        when(
+          () => mockStorage.read(key: 'iris_chat_privkey'),
+        ).thenAnswer((_) async => null);
+        when(
+          () => mockStorage.read(key: 'iris_chat_pubkey'),
+        ).thenAnswer((_) async => 'pubkey123');
 
         final result = await service.getPublicKey();
 
@@ -80,8 +143,12 @@ void main() {
 
     group('hasIdentity', () {
       test('returns true when private key exists', () async {
-        when(() => mockStorage.containsKey(key: 'iris_chat_privkey'))
-            .thenAnswer((_) async => true);
+        when(
+          () => mockStorage.containsKey(key: 'iris_chat_identity'),
+        ).thenAnswer((_) async => false);
+        when(
+          () => mockStorage.containsKey(key: 'iris_chat_privkey'),
+        ).thenAnswer((_) async => true);
 
         final result = await service.hasIdentity();
 
@@ -89,8 +156,12 @@ void main() {
       });
 
       test('returns false when private key not found', () async {
-        when(() => mockStorage.containsKey(key: 'iris_chat_privkey'))
-            .thenAnswer((_) async => false);
+        when(
+          () => mockStorage.containsKey(key: 'iris_chat_identity'),
+        ).thenAnswer((_) async => false);
+        when(
+          () => mockStorage.containsKey(key: 'iris_chat_privkey'),
+        ).thenAnswer((_) async => false);
 
         final result = await service.hasIdentity();
 
@@ -100,11 +171,13 @@ void main() {
 
     group('clearIdentity', () {
       test('deletes both private and public keys', () async {
-        when(() => mockStorage.delete(key: any(named: 'key')))
-            .thenAnswer((_) async {});
+        when(
+          () => mockStorage.delete(key: any(named: 'key')),
+        ).thenAnswer((_) async {});
 
         await service.clearIdentity();
 
+        verify(() => mockStorage.delete(key: 'iris_chat_identity')).called(1);
         verify(() => mockStorage.delete(key: 'iris_chat_privkey')).called(1);
         verify(() => mockStorage.delete(key: 'iris_chat_pubkey')).called(1);
       });

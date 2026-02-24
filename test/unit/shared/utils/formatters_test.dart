@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_chat/shared/utils/formatters.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 void main() {
   group('formatPubkeyForDisplay', () {
@@ -46,6 +47,27 @@ void main() {
     });
   });
 
+  group('formatPubkeyAsNpub', () {
+    test('encodes hex pubkey to npub', () {
+      const hex =
+          'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+      final expected = nostr.Nip19.encodePubkey(hex) as String;
+      expect(formatPubkeyAsNpub(hex), expected);
+    });
+
+    test('returns existing npub unchanged', () {
+      const hex =
+          'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+      final npub = nostr.Nip19.encodePubkey(hex) as String;
+      expect(formatPubkeyAsNpub(npub), npub);
+    });
+
+    test('returns original value when conversion fails', () {
+      const invalid = 'not-a-valid-hex-key';
+      expect(formatPubkeyAsNpub(invalid), invalid);
+    });
+  });
+
   group('formatTime', () {
     test('formats time correctly', () {
       final time = DateTime(2024, 1, 1, 14, 30);
@@ -86,10 +108,15 @@ void main() {
       final result = formatRelativeDateTime(date);
 
       // Should be a day name (Mon, Tue, Wed, etc.)
-      expect(
-        ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        contains(result),
-      );
+      expect([
+        'Mon',
+        'Tue',
+        'Wed',
+        'Thu',
+        'Fri',
+        'Sat',
+        'Sun',
+      ], contains(result));
     });
 
     test('formats older dates as DD/MM', () {

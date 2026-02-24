@@ -6,6 +6,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
+import '../../../../config/providers/invite_provider.dart';
+import '../../../../config/providers/messaging_preferences_provider.dart';
+import '../../../../config/providers/startup_launch_provider.dart';
 import '../../../../core/services/secure_storage_service.dart';
 import '../../../../shared/utils/formatters.dart';
 
@@ -15,12 +18,12 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
+    final startupLaunchState = ref.watch(startupLaunchProvider);
+    final messagingPreferences = ref.watch(messagingPreferencesProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         children: [
           // Identity section
@@ -50,6 +53,21 @@ class SettingsScreen extends ConsumerWidget {
                 : null,
           ),
 
+          // Devices section
+          const _SectionHeader(title: 'Devices'),
+          ListTile(
+            leading: const Icon(Icons.devices),
+            title: const Text('Link a Device'),
+            subtitle: Text(
+              authState.isLinkedDevice
+                  ? 'Linked devices cannot link new devices'
+                  : 'Scan a link invite from the new device',
+            ),
+            onTap: authState.isLinkedDevice
+                ? null
+                : () => context.push('/invite/scan'),
+          ),
+
           // Security section
           const _SectionHeader(title: 'Security'),
           ListTile(
@@ -58,6 +76,81 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: const Text('Backup your key securely'),
             onTap: () => _showExportKeyDialog(context, ref),
           ),
+
+          // Messaging section
+          const _SectionHeader(title: 'Messaging'),
+          SwitchListTile(
+            secondary: const Icon(Icons.keyboard),
+            title: const Text('Send Typing Indicators'),
+            subtitle: const Text(
+              'Share when you are actively typing in a conversation',
+            ),
+            value: messagingPreferences.typingIndicatorsEnabled,
+            onChanged: messagingPreferences.isLoading
+                ? null
+                : (value) => ref
+                      .read(messagingPreferencesProvider.notifier)
+                      .setTypingIndicatorsEnabled(value),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.done_all),
+            title: const Text('Send Delivery Receipts'),
+            subtitle: const Text('Allow others to see when messages arrive'),
+            value: messagingPreferences.deliveryReceiptsEnabled,
+            onChanged: messagingPreferences.isLoading
+                ? null
+                : (value) => ref
+                      .read(messagingPreferencesProvider.notifier)
+                      .setDeliveryReceiptsEnabled(value),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.visibility),
+            title: const Text('Send Read Receipts'),
+            subtitle: const Text('Allow others to see when you open messages'),
+            value: messagingPreferences.readReceiptsEnabled,
+            onChanged: messagingPreferences.isLoading
+                ? null
+                : (value) => ref
+                      .read(messagingPreferencesProvider.notifier)
+                      .setReadReceiptsEnabled(value),
+          ),
+          if (messagingPreferences.error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                messagingPreferences.error!,
+                style: TextStyle(color: theme.colorScheme.error, fontSize: 12),
+              ),
+            ),
+
+          // Application section
+          if (startupLaunchState.isLoading || startupLaunchState.isSupported)
+            const _SectionHeader(title: 'Application'),
+          if (startupLaunchState.isLoading || startupLaunchState.isSupported)
+            SwitchListTile(
+              secondary: const Icon(Icons.power_settings_new),
+              title: const Text('Launch on System Startup'),
+              subtitle: Text(
+                startupLaunchState.isLoading
+                    ? 'Applying startup setting...'
+                    : 'Automatically start iris chat when you log in',
+              ),
+              value: startupLaunchState.enabled,
+              onChanged: startupLaunchState.isLoading
+                  ? null
+                  : (value) => ref
+                        .read(startupLaunchProvider.notifier)
+                        .setEnabled(value),
+            ),
+          if (startupLaunchState.error != null &&
+              (startupLaunchState.isLoading || startupLaunchState.isSupported))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                startupLaunchState.error!,
+                style: TextStyle(color: theme.colorScheme.error, fontSize: 12),
+              ),
+            ),
 
           // About section
           const _SectionHeader(title: 'About'),
@@ -70,7 +163,8 @@ class SettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.code),
             title: const Text('Source Code'),
             subtitle: const Text('github.com/irislib/iris-chat-flutter'),
-            onTap: () => _openUrl('https://github.com/irislib/iris-chat-flutter'),
+            onTap: () =>
+                _openUrl('https://github.com/irislib/iris-chat-flutter'),
           ),
 
           // Danger zone
@@ -81,7 +175,7 @@ class SettingsScreen extends ConsumerWidget {
               'Logout',
               style: TextStyle(color: theme.colorScheme.error),
             ),
-            subtitle: const Text('Your data will be kept on this device'),
+            subtitle: const Text('Remove local chats from this device'),
             onTap: () => _confirmLogout(context, ref),
           ),
           ListTile(
@@ -106,6 +200,26 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _showExportKeyDialog(BuildContext context, WidgetRef ref) async {
+    final authState = ref.read(authStateProvider);
+    if (authState.isLinkedDevice) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Export Private Key'),
+          content: const Text(
+            'This is a linked device. It does not store your main private key.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -142,12 +256,17 @@ class SettingsScreen extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SelectableText(
                     privkey,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -187,8 +306,8 @@ class SettingsScreen extends ConsumerWidget {
       builder: (context) => AlertDialog(
         title: const Text('Logout?'),
         content: const Text(
-          'Your messages and keys will remain on this device. '
-          'You can log back in with your private key.',
+          'This signs you out and deletes local chats from this device. '
+          'Keep your private key to log back in later.',
         ),
         actions: [
           TextButton(
@@ -204,6 +323,8 @@ class SettingsScreen extends ConsumerWidget {
     );
 
     if ((confirmed ?? false) && context.mounted) {
+      await ref.read(databaseServiceProvider).deleteDatabase();
+      _invalidateChatProviders(ref);
       await ref.read(authStateProvider.notifier).logout();
       if (context.mounted) {
         context.go('/login');
@@ -240,6 +361,7 @@ class SettingsScreen extends ConsumerWidget {
       // Clear database
       final dbService = ref.read(databaseServiceProvider);
       await dbService.deleteDatabase();
+      _invalidateChatProviders(ref);
 
       // Clear secure storage
       final secureStorage = SecureStorageService();
@@ -252,6 +374,13 @@ class SettingsScreen extends ConsumerWidget {
         context.go('/login');
       }
     }
+  }
+
+  void _invalidateChatProviders(WidgetRef ref) {
+    ref.invalidate(sessionStateProvider);
+    ref.invalidate(chatStateProvider);
+    ref.invalidate(groupStateProvider);
+    ref.invalidate(inviteStateProvider);
   }
 }
 

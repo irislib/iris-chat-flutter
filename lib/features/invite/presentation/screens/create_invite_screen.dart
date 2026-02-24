@@ -21,8 +21,14 @@ class _CreateInviteScreenState extends ConsumerState<CreateInviteScreen> {
   @override
   void initState() {
     super.initState();
-    // Create an invite immediately
-    WidgetsBinding.instance.addPostFrameCallback((_) => _createInvite());
+    // Create an invite immediately, unless we're already in a creating state.
+    // This makes the screen more testable and avoids double-creating invites.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final inviteState = ref.read(inviteStateProvider);
+      if (!inviteState.isCreating) {
+        _createInvite();
+      }
+    });
   }
 
   @override
@@ -32,8 +38,12 @@ class _CreateInviteScreenState extends ConsumerState<CreateInviteScreen> {
   }
 
   Future<void> _createInvite() async {
-    final invite = await ref.read(inviteStateProvider.notifier).createInvite(
-          label: _labelController.text.isNotEmpty ? _labelController.text : null,
+    final invite = await ref
+        .read(inviteStateProvider.notifier)
+        .createInvite(
+          label: _labelController.text.isNotEmpty
+              ? _labelController.text
+              : null,
         );
 
     if (invite != null && mounted) {
@@ -62,11 +72,11 @@ class _CreateInviteScreenState extends ConsumerState<CreateInviteScreen> {
   }
 
   Future<void> _share() async {
-    if (_inviteUrl == null) return;
+    final inviteUrl = _inviteUrl;
+    if (inviteUrl == null) return;
 
-    await Share.share(
-      _inviteUrl!,
-      subject: 'Iris Chat Invite',
+    await SharePlus.instance.share(
+      ShareParams(text: inviteUrl, subject: 'Iris Chat Invite'),
     );
   }
 
@@ -76,9 +86,7 @@ class _CreateInviteScreenState extends ConsumerState<CreateInviteScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create Invite'),
-      ),
+      appBar: AppBar(title: const Text('Create Invite')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -172,15 +180,12 @@ class _CreateInviteScreenState extends ConsumerState<CreateInviteScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                color: theme.colorScheme.primaryContainer.withValues(alpha: 77),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.info_outline,
-                    color: theme.colorScheme.primary,
-                  ),
+                  Icon(Icons.info_outline, color: theme.colorScheme.primary),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(

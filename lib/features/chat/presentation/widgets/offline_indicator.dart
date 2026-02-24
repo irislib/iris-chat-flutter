@@ -8,8 +8,15 @@ import '../../../../core/services/connectivity_service.dart';
 class OfflineBanner extends ConsumerWidget {
   const OfflineBanner({super.key});
 
-  static const _bannerPadding = EdgeInsets.symmetric(vertical: 8, horizontal: 16);
-  static const _offlineIcon = Icon(Icons.cloud_off, color: Colors.white, size: 16);
+  static const _bannerPadding = EdgeInsets.symmetric(
+    vertical: 8,
+    horizontal: 16,
+  );
+  static const _offlineIcon = Icon(
+    Icons.cloud_off,
+    color: Colors.white,
+    size: 16,
+  );
   static const _spacing = SizedBox(width: 8);
   static const _offlineText = Text(
     'You are offline. Messages will be sent when connected.',
@@ -45,7 +52,7 @@ class OfflineBanner extends ConsumerWidget {
         );
       },
       loading: () => _empty,
-      error: (_, __) => _empty,
+      error: (error, stackTrace) => _empty,
     );
   }
 }
@@ -67,13 +74,10 @@ class _QueueIndicator extends ConsumerWidget {
     return Container(
       padding: _padding,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white.withValues(alpha: 51),
         borderRadius: _borderRadius,
       ),
-      child: Text(
-        '$count queued',
-        style: _textStyle,
-      ),
+      child: Text('$count queued', style: _textStyle),
     );
   }
 }
@@ -90,39 +94,20 @@ class ConnectionStatusIcon extends ConsumerWidget {
 
     return statusAsync.when(
       data: _buildIcon,
-      loading: () => Icon(
-        Icons.cloud_queue,
-        size: size,
-        color: Colors.grey,
-      ),
-      error: (_, __) => Icon(
-        Icons.cloud_off,
-        size: size,
-        color: Colors.red,
-      ),
+      loading: () => Icon(Icons.cloud_queue, size: size, color: Colors.grey),
+      error: (error, stackTrace) =>
+          Icon(Icons.cloud_off, size: size, color: Colors.red),
     );
   }
 
   Widget _buildIcon(ConnectivityStatus status) {
     switch (status) {
       case ConnectivityStatus.online:
-        return Icon(
-          Icons.cloud_done,
-          size: size,
-          color: Colors.green,
-        );
+        return Icon(Icons.cloud_done, size: size, color: Colors.green);
       case ConnectivityStatus.offline:
-        return Icon(
-          Icons.cloud_off,
-          size: size,
-          color: Colors.orange,
-        );
+        return Icon(Icons.cloud_off, size: size, color: Colors.orange);
       case ConnectivityStatus.unknown:
-        return Icon(
-          Icons.cloud_queue,
-          size: size,
-          color: Colors.grey,
-        );
+        return Icon(Icons.cloud_queue, size: size, color: Colors.grey);
     }
   }
 }

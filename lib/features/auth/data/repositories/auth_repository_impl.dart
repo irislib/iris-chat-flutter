@@ -14,9 +14,11 @@ class AuthRepositoryImpl implements AuthRepository {
     // Generate new keypair using ndr-ffi
     final keypair = await NdrFfi.generateKeypair();
 
-    // Store keys securely
-    await _storage.savePrivateKey(keypair.privateKeyHex);
-    await _storage.savePublicKey(keypair.publicKeyHex);
+    // Store keys securely (single-item identity to avoid multiple Keychain prompts).
+    await _storage.saveIdentity(
+      privkeyHex: keypair.privateKeyHex,
+      pubkeyHex: keypair.publicKeyHex,
+    );
 
     return Identity(
       pubkeyHex: keypair.publicKeyHex,
@@ -37,11 +39,38 @@ class AuthRepositoryImpl implements AuthRepository {
     final pubkeyHex = await _derivePublicKey(privkeyHex);
 
     // Store keys securely
-    await _storage.savePrivateKey(privkeyHex);
-    await _storage.savePublicKey(pubkeyHex);
+    await _storage.saveIdentity(privkeyHex: privkeyHex, pubkeyHex: pubkeyHex);
 
     return Identity(
       pubkeyHex: pubkeyHex,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<Identity> loginLinkedDevice({
+    required String ownerPubkeyHex,
+    required String devicePrivkeyHex,
+  }) async {
+    // Validate key formats
+    if (!_isValidPrivateKey(devicePrivkeyHex)) {
+      throw const InvalidKeyException('Invalid private key format');
+    }
+    if (!_isValidHexKey(ownerPubkeyHex)) {
+      throw const InvalidKeyException('Invalid public key format');
+    }
+
+    // Derive device pubkey to ensure the private key is usable.
+    await _derivePublicKey(devicePrivkeyHex);
+
+    // Store device private key + owner public key.
+    await _storage.saveIdentity(
+      privkeyHex: devicePrivkeyHex,
+      pubkeyHex: ownerPubkeyHex,
+    );
+
+    return Identity(
+      pubkeyHex: ownerPubkeyHex,
       createdAt: DateTime.now(),
     );
   }
@@ -69,7 +98,23 @@ class AuthRepositoryImpl implements AuthRepository {
     return _storage.getPrivateKey();
   }
 
+  @override
+  Future<String?> getDevicePubkeyHex() async {
+    final privkeyHex = await _storage.getPrivateKey();
+    if (privkeyHex == null) return null;
+    try {
+      return await _derivePublicKey(privkeyHex);
+    } catch (_) {
+      return null;
+    }
+  }
+
   bool _isValidPrivateKey(String hex) {
+    if (hex.length != 64) return false;
+    return _isValidHexKey(hex);
+  }
+
+  bool _isValidHexKey(String hex) {
     if (hex.length != 64) return false;
     return RegExp(r'^[0-9a-fA-F]+$').hasMatch(hex);
   }
