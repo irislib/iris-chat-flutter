@@ -229,6 +229,18 @@ jobs:
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES
 
+      - name: Verify macOS native FFI is enabled
+        run: |
+          APP_BINARY="$(find build/macos/Build/Products/Release -path '*.app/Contents/MacOS/Runner' -print -quit)"
+          if [ -z "${APP_BINARY}" ]; then
+            echo "macOS app binary not found in build output"
+            exit 1
+          fi
+          if strings "${APP_BINARY}" | grep -q "macOS native FFI is disabled in this build."; then
+            echo "Release binary contains NativeUnavailable fallback for macOS FFI."
+            exit 1
+          fi
+
       - name: Package macOS artifacts
         run: |
           mkdir -p dist
