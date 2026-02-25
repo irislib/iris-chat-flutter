@@ -10,12 +10,45 @@ on:
         description: 'Tag to release (e.g., v1.2.3)'
         required: true
 
+env:
+  FLUTTER_VERSION: '3.41.2'
+
 jobs:
-  build-android:
-    name: Build Android release artifacts
+  verify:
+    name: Verify (analyze + tests)
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: flutter test
+
+  build-android:
+    name: Build Android release artifacts
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +61,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
@@ -38,24 +71,232 @@ jobs:
       - name: Generate code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Build APK
-        run: flutter build apk --release
+      - name: Build Android artifacts
+        run: |
+          flutter build apk --release
+          flutter build appbundle --release
 
-      - name: Build App Bundle
-        run: flutter build appbundle --release
+      - name: Package Android artifacts
+        run: |
+          mkdir -p dist/android
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/android/iris-chat-${RELEASE_TAG}-android.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/android/iris-chat-${RELEASE_TAG}-android.aab"
+          cd dist
+          zip -r "iris-chat-${RELEASE_TAG}-android.zip" android
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-release-artifacts
-          path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/bundle/release/app-release.aab
+          path: dist/iris-chat-${{ env.RELEASE_TAG }}-android.zip
+          retention-days: 7
+
+  build-linux:
+    name: Build Linux release artifacts
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            liblzma-dev \
+            libsecret-1-dev \
+            libjsoncpp-dev
+
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Linux bundle
+        run: flutter build linux --release
+
+      - name: Package Linux artifacts
+        run: |
+          mkdir -p dist
+          tar -C build/linux/x64/release -czf "dist/iris-chat-${RELEASE_TAG}-linux-x64.tar.gz" bundle
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-artifacts
+          path: dist/iris-chat-${{ env.RELEASE_TAG }}-linux-x64.tar.gz
+          retention-days: 7
+
+  build-windows:
+    name: Build Windows release artifacts
+    runs-on: windows-latest
+    needs: verify
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Package Windows artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release -DestinationPath dist/iris-chat-$env:RELEASE_TAG-windows-x64.zip
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-artifacts
+          path: dist/iris-chat-${{ env.RELEASE_TAG }}-windows-x64.zip
+          retention-days: 7
+
+  build-macos:
+    name: Build macOS release artifacts
+    runs-on: macos-latest
+    needs: verify
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Enable macOS desktop
+        run: flutter config --enable-macos-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build macOS app (arm64)
+        run: |
+          flutter build macos --release --config-only
+          xcodebuild \
+            -workspace macos/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -derivedDataPath build/macos \
+            -destination 'platform=macOS,arch=arm64' \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES
+
+      - name: Package macOS artifacts
+        run: |
+          mkdir -p dist
+          APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "No macOS .app bundle found in build output"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "${APP_PATH}" "dist/iris-chat-${RELEASE_TAG}-macos-arm64.zip"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-artifacts
+          path: dist/iris-chat-${{ env.RELEASE_TAG }}-macos-arm64.zip
+          retention-days: 7
+
+  build-ios:
+    name: Build iOS simulator artifacts
+    runs-on: macos-latest
+    needs: verify
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build iOS simulator app (debug)
+        run: flutter build ios --simulator --debug
+
+      - name: Package iOS artifacts
+        run: |
+          mkdir -p dist
+          APP_PATH="$(find build/ios/iphonesimulator -maxdepth 1 -name '*.app' -print -quit)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "No iOS simulator .app bundle found in build output"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "${APP_PATH}" "dist/iris-chat-${RELEASE_TAG}-ios-simulator-debug.zip"
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-artifacts
+          path: dist/iris-chat-${{ env.RELEASE_TAG }}-ios-simulator-debug.zip
           retention-days: 7
 
   release:
     name: Create GitHub Release
-    needs: build-android
+    needs:
+      - build-android
+      - build-linux
+      - build-windows
+      - build-macos
+      - build-ios
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -74,6 +315,4 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
           generate_release_notes: true
-          files: |
-            artifacts/app-release.apk
-            artifacts/app-release.aab
+          files: artifacts/*

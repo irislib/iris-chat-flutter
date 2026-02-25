@@ -78,15 +78,6 @@
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
-		HTRFFI0001000000000000 /* hashtree_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = hashtree_ffi.swift; sourceTree = "<group>"; };
-		HTRFFI0002000000000000 /* hashtree_ffiFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hashtree_ffiFFI.h; sourceTree = "<group>"; };
-		HTRFFI0003000000000000 /* hashtree_ffiFFI.modulemap */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.module-map; path = hashtree_ffiFFI.modulemap; sourceTree = "<group>"; };
-		HTRFFI0004000000000000 /* libhashtree_ffi.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhashtree_ffi.a; path = ../libhashtree_ffi.a; sourceTree = "<group>"; };
-		NDRFFI0001000000000000 /* NdrFfiPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NdrFfiPlugin.swift; sourceTree = "<group>"; };
-		NDRFFI0002000000000000 /* ndr_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ndr_ffi.swift; sourceTree = "<group>"; };
-		NDRFFI0003000000000000 /* libndr_ffi.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libndr_ffi.a; path = ../libndr_ffi.a; sourceTree = "<group>"; };
-		NDRFFI0004000000000000 /* ndr_ffiFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ndr_ffiFFI.h; sourceTree = "<group>"; };
-		NDRFFI0006000000000000 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		33CEB47222A05771004F2AC0 /* Flutter-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Debug.xcconfig"; sourceTree = "<group>"; };
 		33CEB47422A05771004F2AC0 /* Flutter-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Release.xcconfig"; sourceTree = "<group>"; };
 		33CEB47722A0578A004F2AC0 /* Flutter-Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = "Flutter-Generated.xcconfig"; path = "ephemeral/Flutter-Generated.xcconfig"; sourceTree = "<group>"; };
@@ -102,6 +93,15 @@
 		A9FB51EA19BF8B5D77540E2E /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		CF9D897B4713826B14D959C1 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		EA01808BDC361E9A435DAD7D /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
+		HTRFFI0001000000000000 /* hashtree_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = hashtree_ffi.swift; sourceTree = "<group>"; };
+		HTRFFI0002000000000000 /* hashtree_ffiFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = hashtree_ffiFFI.h; sourceTree = "<group>"; };
+		HTRFFI0003000000000000 /* hashtree_ffiFFI.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = hashtree_ffiFFI.modulemap; sourceTree = "<group>"; };
+		HTRFFI0004000000000000 /* libhashtree_ffi.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libhashtree_ffi.a; path = ../libhashtree_ffi.a; sourceTree = "<group>"; };
+		NDRFFI0001000000000000 /* NdrFfiPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NdrFfiPlugin.swift; sourceTree = "<group>"; };
+		NDRFFI0002000000000000 /* ndr_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ndr_ffi.swift; sourceTree = "<group>"; };
+		NDRFFI0003000000000000 /* libndr_ffi.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libndr_ffi.a; path = ../libndr_ffi.a; sourceTree = "<group>"; };
+		NDRFFI0004000000000000 /* ndr_ffiFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ndr_ffiFFI.h; sourceTree = "<group>"; };
+		NDRFFI0006000000000000 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -219,13 +219,15 @@
 			path = Runner;
 			sourceTree = "<group>";
 		};
-		NDRFFI0005000000000000 /* NdrFfi */ = {
+		D73912EC22F37F3D000D13A0 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				NDRFFI0002000000000000 /* ndr_ffi.swift */,
-				NDRFFI0004000000000000 /* ndr_ffiFFI.h */,
+				0DC9FEFA0D1AEB2FBDD4D4E9 /* Pods_Runner.framework */,
+				7933BBD0BE126C6015F6B6A9 /* Pods_RunnerTests.framework */,
+				HTRFFI0004000000000000 /* libhashtree_ffi.a */,
+				NDRFFI0003000000000000 /* libndr_ffi.a */,
 			);
-			path = NdrFfi;
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		HTRFFI0005000000000000 /* HashtreeFfi */ = {
@@ -238,15 +240,13 @@
 			path = HashtreeFfi;
 			sourceTree = "<group>";
 		};
-		D73912EC22F37F3D000D13A0 /* Frameworks */ = {
+		NDRFFI0005000000000000 /* NdrFfi */ = {
 			isa = PBXGroup;
 			children = (
-				0DC9FEFA0D1AEB2FBDD4D4E9 /* Pods_Runner.framework */,
-				7933BBD0BE126C6015F6B6A9 /* Pods_RunnerTests.framework */,
-				HTRFFI0004000000000000 /* libhashtree_ffi.a */,
-				NDRFFI0003000000000000 /* libndr_ffi.a */,
+				NDRFFI0002000000000000 /* ndr_ffi.swift */,
+				NDRFFI0004000000000000 /* ndr_ffiFFI.h */,
 			);
-			name = Frameworks;
+			path = NdrFfi;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -282,6 +282,7 @@
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				F70CB804C5BEA3D043E284D5 /* [CP] Embed Pods Frameworks */,
+				0814FE35D48F5AD1A678A6FD /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -364,6 +365,23 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		0814FE35D48F5AD1A678A6FD /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 		23ADD1D94975F8CCE7091EE0 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -631,6 +649,7 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)",
+					"$(SRCROOT)/..",
 				);
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -773,6 +792,7 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)",
+					"$(SRCROOT)/..",
 				);
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -803,6 +823,7 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)",
+					"$(SRCROOT)/..",
 				);
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
