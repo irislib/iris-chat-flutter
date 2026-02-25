@@ -8,5 +8,6 @@ class MainActivity: FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         // Register the NDR FFI plugin
         flutterEngine.plugins.add(NdrFfiPlugin())
+        flutterEngine.plugins.add(HashtreePlugin())
     }
 }

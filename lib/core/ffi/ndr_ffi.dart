@@ -189,65 +189,6 @@ class NdrFfi {
     }
   }
 
-  /// Compute deterministic hashtree nhash for a local file without uploading.
-  static Future<String> hashtreeNhashFromFile(String filePath) async {
-    final result = await _channel.invokeMethod<String>(
-      'hashtreeNhashFromFile',
-      {'filePath': filePath},
-    );
-    if (result == null || result.isEmpty) {
-      throw NdrException.serialization('Failed to compute attachment nhash');
-    }
-    return result;
-  }
-
-  /// Upload a local file to hashtree/Blossom and return its nhash.
-  static Future<String> hashtreeUploadFile({
-    required String privkeyHex,
-    required String filePath,
-    required List<String> readServers,
-    required List<String> writeServers,
-  }) async {
-    final result = await _channel.invokeMethod<String>('hashtreeUploadFile', {
-      'privkeyHex': privkeyHex,
-      'filePath': filePath,
-      'readServers': readServers,
-      'writeServers': writeServers,
-    });
-    if (result == null || result.isEmpty) {
-      throw NdrException.serialization('Failed to upload attachment');
-    }
-    return result;
-  }
-
-  /// Download an attachment into memory.
-  static Future<Uint8List> hashtreeDownloadBytes({
-    required String nhash,
-    required List<String> readServers,
-  }) async {
-    final result = await _channel.invokeMethod<Uint8List>(
-      'hashtreeDownloadBytes',
-      {'nhash': nhash, 'readServers': readServers},
-    );
-    if (result == null) {
-      throw NdrException.serialization('Failed to download attachment');
-    }
-    return result;
-  }
-
-  /// Download an attachment directly to disk.
-  static Future<void> hashtreeDownloadToFile({
-    required String nhash,
-    required String outputPath,
-    required List<String> readServers,
-  }) async {
-    await _channel.invokeMethod<void>('hashtreeDownloadToFile', {
-      'nhash': nhash,
-      'outputPath': outputPath,
-      'readServers': readServers,
-    });
-  }
-
   /// Create a signed AppKeys event JSON for publishing to relays.
   static Future<String> createSignedAppKeysEvent({
     required String ownerPubkeyHex,

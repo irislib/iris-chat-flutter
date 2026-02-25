@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:bech32/bech32.dart';
-import 'package:crypto/crypto.dart' as crypto;
-import 'package:cryptography/cryptography.dart';
 import 'package:path/path.dart' as p;
 
 final RegExp _fileLinkRegex = RegExp(
@@ -32,19 +29,6 @@ class HashtreeFileLinkExtraction {
 
   final String text;
   final List<HashtreeFileLink> links;
-}
-
-/// Content-hash-key encrypted blob ready for Blossom upload.
-class HashtreeEncryptedBlob {
-  const HashtreeEncryptedBlob({
-    required this.encryptedBytes,
-    required this.decryptKey,
-    required this.encryptedHash,
-  });
-
-  final Uint8List encryptedBytes;
-  final Uint8List decryptKey;
-  final Uint8List encryptedHash;
 }
 
 /// Decoded payload from an `nhash` reference.
@@ -160,45 +144,6 @@ DecodedNhash? decodeNhash(String nhash) {
   }
 }
 
-Future<Uint8List> decryptChkDownload({
-  required Uint8List encryptedBytes,
-  required Uint8List decryptKey,
-}) async {
-  if (decryptKey.length != 32) {
-    throw ArgumentError.value(
-      decryptKey.length,
-      'decryptKey.length',
-      'must be 32 bytes',
-    );
-  }
-  if (encryptedBytes.length < 16) {
-    throw ArgumentError.value(
-      encryptedBytes.length,
-      'encryptedBytes.length',
-      'must be >= 16 bytes',
-    );
-  }
-
-  final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
-  final derived = await hkdf.deriveKey(
-    secretKey: SecretKey(decryptKey),
-    nonce: Uint8List.fromList(utf8.encode('hashtree-chk')),
-    info: Uint8List.fromList(utf8.encode('encryption-key')),
-  );
-  final derivedKeyBytes = Uint8List.fromList(await derived.extractBytes());
-
-  final cipherText = encryptedBytes.sublist(0, encryptedBytes.length - 16);
-  final macBytes = encryptedBytes.sublist(encryptedBytes.length - 16);
-  final box = SecretBox(cipherText, nonce: Uint8List(12), mac: Mac(macBytes));
-
-  final aes = AesGcm.with256bits();
-  final plaintext = await aes.decrypt(
-    box,
-    secretKey: SecretKey(derivedKeyBytes),
-  );
-  return Uint8List.fromList(plaintext);
-}
-
 bool isImageFilename(String filename) {
   final ext = p.extension(filename).toLowerCase();
   return switch (ext) {
@@ -225,73 +170,6 @@ String buildAttachmentAwarePreview(String text, {int maxLength = 50}) {
 
   if (preview.length <= maxLength) return preview;
   return '${preview.substring(0, maxLength)}...';
-}
-
-Future<HashtreeEncryptedBlob> encryptChkForUpload(Uint8List plaintext) async {
-  final decryptKey = Uint8List.fromList(crypto.sha256.convert(plaintext).bytes);
-
-  final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
-  final derived = await hkdf.deriveKey(
-    secretKey: SecretKey(decryptKey),
-    nonce: Uint8List.fromList(utf8.encode('hashtree-chk')),
-    info: Uint8List.fromList(utf8.encode('encryption-key')),
-  );
-  final derivedKeyBytes = Uint8List.fromList(await derived.extractBytes());
-
-  final aes = AesGcm.with256bits();
-  final box = await aes.encrypt(
-    plaintext,
-    secretKey: SecretKey(derivedKeyBytes),
-    nonce: Uint8List(12),
-  );
-
-  final encryptedBytes = Uint8List.fromList([
-    ...box.cipherText,
-    ...box.mac.bytes,
-  ]);
-  final encryptedHash = Uint8List.fromList(
-    crypto.sha256.convert(encryptedBytes).bytes,
-  );
-
-  return HashtreeEncryptedBlob(
-    encryptedBytes: encryptedBytes,
-    decryptKey: decryptKey,
-    encryptedHash: encryptedHash,
-  );
-}
-
-/// Encode hashtree TLV bech32 `nhash`.
-///
-/// TLV tags:
-/// - 0: 32-byte encrypted blob hash
-/// - 5: optional 32-byte decrypt key
-String encodeNhash({required Uint8List hash, Uint8List? decryptKey}) {
-  if (hash.length != 32) {
-    throw ArgumentError.value(hash.length, 'hash.length', 'must be 32 bytes');
-  }
-  if (decryptKey != null && decryptKey.length != 32) {
-    throw ArgumentError.value(
-      decryptKey.length,
-      'decryptKey.length',
-      'must be 32 bytes',
-    );
-  }
-
-  final tlv = BytesBuilder(copy: false)
-    ..addByte(0)
-    ..addByte(32)
-    ..add(hash);
-
-  if (decryptKey != null) {
-    tlv
-      ..addByte(5)
-      ..addByte(32)
-      ..add(decryptKey);
-  }
-
-  final data5 = _convertBits(tlv.toBytes(), fromBits: 8, toBits: 5, pad: true);
-  // nhash identifiers with decrypt keys are longer than BIP173's 90-char limit.
-  return bech32.encode(Bech32('nhash', data5), 4096);
 }
 
 String hexEncode(Uint8List bytes) {

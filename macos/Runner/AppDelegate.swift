@@ -15,6 +15,8 @@ class AppDelegate: FlutterAppDelegate {
     let controller = mainFlutterWindow?.contentViewController as! FlutterViewController
     let registrar = controller.registrar(forPlugin: "NdrFfiPlugin")
     NdrFfiPlugin.register(with: registrar)
+    let hashtreeRegistrar = controller.registrar(forPlugin: "HashtreePlugin")
+    HashtreePlugin.register(with: hashtreeRegistrar)
     super.applicationDidFinishLaunching(notification)
   }
 }

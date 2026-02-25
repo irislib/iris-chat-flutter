@@ -37,14 +37,6 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
                 handleGenerateKeypair(result: result)
             case "derivePublicKey":
                 try handleDerivePublicKey(call: call, result: result)
-            case "hashtreeNhashFromFile":
-                try handleHashtreeNhashFromFile(call: call, result: result)
-            case "hashtreeUploadFile":
-                try handleHashtreeUploadFile(call: call, result: result)
-            case "hashtreeDownloadBytes":
-                try handleHashtreeDownloadBytes(call: call, result: result)
-            case "hashtreeDownloadToFile":
-                try handleHashtreeDownloadToFile(call: call, result: result)
             case "createSignedAppKeysEvent":
                 try handleCreateSignedAppKeysEvent(call: call, result: result)
             case "parseAppKeysEvent":
@@ -176,55 +168,6 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
         }
 
         result(try derivePublicKey(privkeyHex: privkeyHex))
-    }
-
-    private func handleHashtreeNhashFromFile(call: FlutterMethodCall, result: FlutterResult) throws {
-        guard let args = call.arguments as? [String: Any],
-              let filePath = args["filePath"] as? String else {
-            throw PluginError.invalidArguments("Missing filePath")
-        }
-
-        result(try hashtreeNhashFromFile(filePath: filePath))
-    }
-
-    private func handleHashtreeUploadFile(call: FlutterMethodCall, result: FlutterResult) throws {
-        guard let args = call.arguments as? [String: Any],
-              let privkeyHex = args["privkeyHex"] as? String,
-              let filePath = args["filePath"] as? String else {
-            throw PluginError.invalidArguments("Missing privkeyHex or filePath")
-        }
-
-        let readServers = args["readServers"] as? [String] ?? []
-        let writeServers = args["writeServers"] as? [String] ?? []
-        result(
-            try hashtreeUploadFile(
-                privkeyHex: privkeyHex,
-                filePath: filePath,
-                readServers: readServers,
-                writeServers: writeServers
-            )
-        )
-    }
-
-    private func handleHashtreeDownloadBytes(call: FlutterMethodCall, result: FlutterResult) throws {
-        guard let args = call.arguments as? [String: Any],
-              let nhash = args["nhash"] as? String else {
-            throw PluginError.invalidArguments("Missing nhash")
-        }
-        let readServers = args["readServers"] as? [String] ?? []
-        let bytes = try hashtreeDownloadBytes(nhash: nhash, readServers: readServers)
-        result(FlutterStandardTypedData(bytes: bytes))
-    }
-
-    private func handleHashtreeDownloadToFile(call: FlutterMethodCall, result: FlutterResult) throws {
-        guard let args = call.arguments as? [String: Any],
-              let nhash = args["nhash"] as? String,
-              let outputPath = args["outputPath"] as? String else {
-            throw PluginError.invalidArguments("Missing nhash or outputPath")
-        }
-        let readServers = args["readServers"] as? [String] ?? []
-        try hashtreeDownloadToFile(nhash: nhash, outputPath: outputPath, readServers: readServers)
-        result(nil)
     }
 
     // MARK: - AppKeys
@@ -1090,6 +1033,104 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
             throw PluginError.invalidArguments("Missing id")
         }
         sessionManagerHandles.removeValue(forKey: id)
+        result(nil)
+    }
+}
+
+/// Flutter plugin for hashtree attachment bindings (macOS).
+///
+/// Uses a dedicated channel so attachment APIs are decoupled from ndr-ffi APIs.
+public class HashtreePlugin: NSObject, FlutterPlugin {
+    public static func register(with registrar: FlutterPluginRegistrar) {
+        let channel = FlutterMethodChannel(
+            name: "to.iris.chat/hashtree",
+            binaryMessenger: registrar.messenger
+        )
+        let instance = HashtreePlugin()
+        registrar.addMethodCallDelegate(instance, channel: channel)
+    }
+
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        do {
+            switch call.method {
+            case "nhashFromFile":
+                try handleNhashFromFile(call: call, result: result)
+            case "uploadFile":
+                try handleUploadFile(call: call, result: result)
+            case "downloadBytes":
+                try handleDownloadBytes(call: call, result: result)
+            case "downloadToFile":
+                try handleDownloadToFile(call: call, result: result)
+            default:
+                result(FlutterMethodNotImplemented)
+            }
+        } catch let error as HashtreeError {
+            result(
+                FlutterError(
+                    code: "HashtreeError",
+                    message: String(describing: error),
+                    details: nil
+                )
+            )
+        } catch let error as PluginError {
+            result(FlutterError(code: error.code, message: error.message, details: nil))
+        } catch {
+            result(
+                FlutterError(
+                    code: "HashtreeError",
+                    message: error.localizedDescription,
+                    details: nil
+                )
+            )
+        }
+    }
+
+    private func handleNhashFromFile(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let filePath = args["filePath"] as? String else {
+            throw PluginError.invalidArguments("Missing filePath")
+        }
+
+        result(try hashtreeNhashFromFile(filePath: filePath))
+    }
+
+    private func handleUploadFile(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let privkeyHex = args["privkeyHex"] as? String,
+              let filePath = args["filePath"] as? String else {
+            throw PluginError.invalidArguments("Missing privkeyHex or filePath")
+        }
+
+        let readServers = args["readServers"] as? [String] ?? []
+        let writeServers = args["writeServers"] as? [String] ?? []
+        result(
+            try hashtreeUploadFile(
+                privkeyHex: privkeyHex,
+                filePath: filePath,
+                readServers: readServers,
+                writeServers: writeServers
+            )
+        )
+    }
+
+    private func handleDownloadBytes(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let nhash = args["nhash"] as? String else {
+            throw PluginError.invalidArguments("Missing nhash")
+        }
+        let readServers = args["readServers"] as? [String] ?? []
+        let bytes = try hashtreeDownloadBytes(nhash: nhash, readServers: readServers)
+        result(FlutterStandardTypedData(bytes: bytes))
+    }
+
+    private func handleDownloadToFile(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let nhash = args["nhash"] as? String,
+              let outputPath = args["outputPath"] as? String else {
+            throw PluginError.invalidArguments("Missing nhash or outputPath")
+        }
+        let readServers = args["readServers"] as? [String] ?? []
+        try hashtreeDownloadToFile(nhash: nhash, outputPath: outputPath, readServers: readServers)
         result(nil)
     }
 }

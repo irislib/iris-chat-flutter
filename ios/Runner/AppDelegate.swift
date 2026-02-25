@@ -11,6 +11,7 @@ import UIKit
 
     // Register the NDR FFI plugin for native Rust bindings
     NdrFfiPlugin.register(with: self.registrar(forPlugin: "NdrFfiPlugin")!)
+    HashtreePlugin.register(with: self.registrar(forPlugin: "HashtreePlugin")!)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

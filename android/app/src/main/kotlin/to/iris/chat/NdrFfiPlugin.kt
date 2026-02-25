@@ -49,10 +49,6 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
                 "version" -> handleVersion(result)
                 "generateKeypair" -> handleGenerateKeypair(result)
                 "derivePublicKey" -> handleDerivePublicKey(call, result)
-                "hashtreeNhashFromFile" -> handleHashtreeNhashFromFile(call, result)
-                "hashtreeUploadFile" -> handleHashtreeUploadFile(call, result)
-                "hashtreeDownloadBytes" -> handleHashtreeDownloadBytes(call, result)
-                "hashtreeDownloadToFile" -> handleHashtreeDownloadToFile(call, result)
                 "createSignedAppKeysEvent" -> handleCreateSignedAppKeysEvent(call, result)
                 "parseAppKeysEvent" -> handleParseAppKeysEvent(call, result)
                 "createInvite" -> handleCreateInvite(call, result)
@@ -136,50 +132,6 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
             ?: throw IllegalArgumentException("Missing privkeyHex")
 
         result.success(derivePublicKey(privkeyHex))
-    }
-
-    private fun handleHashtreeNhashFromFile(call: MethodCall, result: Result) {
-        val filePath = call.argument<String>("filePath")
-            ?: throw IllegalArgumentException("Missing filePath")
-
-        result.success(hashtreeNhashFromFile(filePath))
-    }
-
-    private fun handleHashtreeUploadFile(call: MethodCall, result: Result) {
-        val privkeyHex = call.argument<String>("privkeyHex")
-            ?: throw IllegalArgumentException("Missing privkeyHex")
-        val filePath = call.argument<String>("filePath")
-            ?: throw IllegalArgumentException("Missing filePath")
-        val readServers = call.argument<List<String>>("readServers") ?: emptyList()
-        val writeServers = call.argument<List<String>>("writeServers") ?: emptyList()
-
-        result.success(
-            hashtreeUploadFile(
-                privkeyHex = privkeyHex,
-                filePath = filePath,
-                readServers = readServers,
-                writeServers = writeServers,
-            ),
-        )
-    }
-
-    private fun handleHashtreeDownloadBytes(call: MethodCall, result: Result) {
-        val nhash = call.argument<String>("nhash")
-            ?: throw IllegalArgumentException("Missing nhash")
-        val readServers = call.argument<List<String>>("readServers") ?: emptyList()
-
-        result.success(hashtreeDownloadBytes(nhash, readServers))
-    }
-
-    private fun handleHashtreeDownloadToFile(call: MethodCall, result: Result) {
-        val nhash = call.argument<String>("nhash")
-            ?: throw IllegalArgumentException("Missing nhash")
-        val outputPath = call.argument<String>("outputPath")
-            ?: throw IllegalArgumentException("Missing outputPath")
-        val readServers = call.argument<List<String>>("readServers") ?: emptyList()
-
-        hashtreeDownloadToFile(nhash, outputPath, readServers)
-        result.success(null)
     }
 
     // MARK: - AppKeys

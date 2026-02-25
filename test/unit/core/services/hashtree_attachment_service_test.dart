@@ -82,10 +82,8 @@ void main() {
       () => authRepository.getPrivateKey(),
     ).thenAnswer((_) async => privateKeyHex);
 
-    nhash = encodeNhash(
-      hash: Uint8List.fromList(List<int>.generate(32, (i) => i)),
-      decryptKey: Uint8List.fromList(List<int>.generate(32, (i) => 255 - i)),
-    );
+    nhash =
+        'nhash1qqs0ucry576jgwhwvmudmnfzrrpcgafqdlchzv5tpeann357ewygseq9yzyqk7yepaewftz6g5ky56gcy05r4w22xxutdtslcndkgyxy2ppnj7999sn';
     fakeFfi = _FakeHashtreeAttachmentFfi(
       nhash: nhash,
       downloadBytesPayload: Uint8List.fromList(const [9, 8, 7, 6]),

@@ -527,26 +527,6 @@ RustBuffer uniffi_ndr_ffi_fn_func_generate_keypair(RustCallStatus *_Nonnull out_
     
 );
 #endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_HASHTREE_DOWNLOAD_BYTES
-#define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_HASHTREE_DOWNLOAD_BYTES
-RustBuffer uniffi_ndr_ffi_fn_func_hashtree_download_bytes(RustBuffer nhash, RustBuffer read_servers, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_HASHTREE_DOWNLOAD_TO_FILE
-#define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_HASHTREE_DOWNLOAD_TO_FILE
-void uniffi_ndr_ffi_fn_func_hashtree_download_to_file(RustBuffer nhash, RustBuffer output_path, RustBuffer read_servers, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_HASHTREE_NHASH_FROM_FILE
-#define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_HASHTREE_NHASH_FROM_FILE
-RustBuffer uniffi_ndr_ffi_fn_func_hashtree_nhash_from_file(RustBuffer file_path, RustCallStatus *_Nonnull out_status
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_HASHTREE_UPLOAD_FILE
-#define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_HASHTREE_UPLOAD_FILE
-RustBuffer uniffi_ndr_ffi_fn_func_hashtree_upload_file(RustBuffer privkey_hex, RustBuffer file_path, RustBuffer read_servers, RustBuffer write_servers, RustCallStatus *_Nonnull out_status
-);
-#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_PARSE_APP_KEYS_EVENT
 #define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_FN_FUNC_PARSE_APP_KEYS_EVENT
 RustBuffer uniffi_ndr_ffi_fn_func_parse_app_keys_event(RustBuffer event_json, RustCallStatus *_Nonnull out_status
@@ -853,30 +833,6 @@ uint16_t uniffi_ndr_ffi_checksum_func_derive_public_key(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_GENERATE_KEYPAIR
 #define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_GENERATE_KEYPAIR
 uint16_t uniffi_ndr_ffi_checksum_func_generate_keypair(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_HASHTREE_DOWNLOAD_BYTES
-#define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_HASHTREE_DOWNLOAD_BYTES
-uint16_t uniffi_ndr_ffi_checksum_func_hashtree_download_bytes(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_HASHTREE_DOWNLOAD_TO_FILE
-#define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_HASHTREE_DOWNLOAD_TO_FILE
-uint16_t uniffi_ndr_ffi_checksum_func_hashtree_download_to_file(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_HASHTREE_NHASH_FROM_FILE
-#define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_HASHTREE_NHASH_FROM_FILE
-uint16_t uniffi_ndr_ffi_checksum_func_hashtree_nhash_from_file(void
-    
-);
-#endif
-#ifndef UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_HASHTREE_UPLOAD_FILE
-#define UNIFFI_FFIDEF_UNIFFI_NDR_FFI_CHECKSUM_FUNC_HASHTREE_UPLOAD_FILE
-uint16_t uniffi_ndr_ffi_checksum_func_hashtree_upload_file(void
     
 );
 #endif

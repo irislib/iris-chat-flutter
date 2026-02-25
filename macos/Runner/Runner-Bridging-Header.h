@@ -3,3 +3,4 @@
 //
 
 #import "NdrFfi/ndr_ffiFFI.h"
+#import "HashtreeFfi/hashtree_ffiFFI.h"

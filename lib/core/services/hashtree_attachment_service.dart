@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../../features/auth/domain/repositories/auth_repository.dart';
-import '../ffi/ndr_ffi.dart';
+import '../ffi/hashtree_ffi.dart';
 import '../utils/hashtree_attachments.dart';
 
 class HashtreeUploadException implements Exception {
@@ -77,12 +77,12 @@ abstract class HashtreeAttachmentFfi {
   });
 }
 
-class NdrHashtreeAttachmentFfi implements HashtreeAttachmentFfi {
-  const NdrHashtreeAttachmentFfi();
+class NativeHashtreeAttachmentFfi implements HashtreeAttachmentFfi {
+  const NativeHashtreeAttachmentFfi();
 
   @override
   Future<String> nhashFromFile(String filePath) {
-    return NdrFfi.hashtreeNhashFromFile(filePath);
+    return HashtreeFfi.nhashFromFile(filePath);
   }
 
   @override
@@ -92,7 +92,7 @@ class NdrHashtreeAttachmentFfi implements HashtreeAttachmentFfi {
     required List<String> readServers,
     required List<String> writeServers,
   }) {
-    return NdrFfi.hashtreeUploadFile(
+    return HashtreeFfi.uploadFile(
       privkeyHex: privkeyHex,
       filePath: filePath,
       readServers: readServers,
@@ -105,7 +105,7 @@ class NdrHashtreeAttachmentFfi implements HashtreeAttachmentFfi {
     required String nhash,
     required List<String> readServers,
   }) {
-    return NdrFfi.hashtreeDownloadBytes(nhash: nhash, readServers: readServers);
+    return HashtreeFfi.downloadBytes(nhash: nhash, readServers: readServers);
   }
 
   @override
@@ -114,7 +114,7 @@ class NdrHashtreeAttachmentFfi implements HashtreeAttachmentFfi {
     required String outputPath,
     required List<String> readServers,
   }) {
-    return NdrFfi.hashtreeDownloadToFile(
+    return HashtreeFfi.downloadToFile(
       nhash: nhash,
       outputPath: outputPath,
       readServers: readServers,
@@ -122,14 +122,14 @@ class NdrHashtreeAttachmentFfi implements HashtreeAttachmentFfi {
   }
 }
 
-/// Uploads attachments using hashtree CHK+Blossom via ndr-ffi.
+/// Uploads attachments using hashtree CHK+Blossom via hashtree-ffi.
 class HashtreeAttachmentService {
   HashtreeAttachmentService(
     this._authRepository, {
     HashtreeAttachmentFfi? ffi,
     List<Uri>? readServers,
     List<Uri>? writeServers,
-  }) : _ffi = ffi ?? const NdrHashtreeAttachmentFfi() {
+  }) : _ffi = ffi ?? const NativeHashtreeAttachmentFfi() {
     final resolvedWriteServers = writeServers ?? _defaultWriteServers();
     _writeServers = resolvedWriteServers;
     _readServers = _mergeReadServers(
@@ -226,7 +226,7 @@ class HashtreeAttachmentService {
       final decoded = decodeNhash(nhash);
       if (decoded == null) {
         throw const HashtreeUploadException(
-          'ndr-ffi returned an invalid attachment nhash.',
+          'hashtree-ffi returned an invalid attachment nhash.',
         );
       }
 
@@ -242,7 +242,7 @@ class HashtreeAttachmentService {
       );
     } on PlatformException catch (e) {
       throw HashtreeUploadException(
-        'Failed to prepare attachment via ndr-ffi: ${e.message ?? e.code}',
+        'Failed to prepare attachment via hashtree-ffi: ${e.message ?? e.code}',
       );
     }
   }
@@ -317,7 +317,7 @@ class HashtreeAttachmentService {
       }
     } on PlatformException catch (e) {
       throw HashtreeUploadException(
-        'Attachment upload failed via ndr-ffi: ${e.message ?? e.code}',
+        'Attachment upload failed via hashtree-ffi: ${e.message ?? e.code}',
       );
     }
   }
@@ -348,7 +348,7 @@ class HashtreeAttachmentService {
       );
     } on PlatformException catch (e) {
       throw HashtreeUploadException(
-        'Attachment download failed via ndr-ffi: ${e.message ?? e.code}',
+        'Attachment download failed via hashtree-ffi: ${e.message ?? e.code}',
       );
     }
   }
@@ -367,7 +367,7 @@ class HashtreeAttachmentService {
       );
     } on PlatformException catch (e) {
       throw HashtreeUploadException(
-        'Attachment download failed via ndr-ffi: ${e.message ?? e.code}',
+        'Attachment download failed via hashtree-ffi: ${e.message ?? e.code}',
       );
     }
   }

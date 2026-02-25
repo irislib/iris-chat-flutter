@@ -493,24 +493,6 @@ fileprivate struct FfiConverterString: FfiConverter {
     }
 }
 
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-fileprivate struct FfiConverterData: FfiConverterRustBuffer {
-    typealias SwiftType = Data
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
-        let len: Int32 = try readInt(&buf)
-        return Data(try readBytes(&buf, count: Int(len)))
-    }
-
-    public static func write(_ value: Data, into buf: inout [UInt8]) {
-        let len = Int32(value.count)
-        writeInt(&buf, len)
-        writeBytes(&buf, value)
-    }
-}
-
 
 
 
@@ -2628,8 +2610,6 @@ public enum NdrError {
     )
     case SessionNotReady(String
     )
-    case AttachmentError(String
-    )
 }
 
 
@@ -2665,9 +2645,6 @@ public struct FfiConverterTypeNdrError: FfiConverterRustBuffer {
             try FfiConverterString.read(from: &buf)
             )
         case 7: return .SessionNotReady(
-            try FfiConverterString.read(from: &buf)
-            )
-        case 8: return .AttachmentError(
             try FfiConverterString.read(from: &buf)
             )
 
@@ -2714,11 +2691,6 @@ public struct FfiConverterTypeNdrError: FfiConverterRustBuffer {
         
         case let .SessionNotReady(v1):
             writeInt(&buf, Int32(7))
-            FfiConverterString.write(v1, into: &buf)
-            
-        
-        case let .AttachmentError(v1):
-            writeInt(&buf, Int32(8))
             FfiConverterString.write(v1, into: &buf)
             
         }
@@ -3009,51 +2981,6 @@ public func generateKeypair() -> FfiKeyPair {
 })
 }
 /**
- * Download and decrypt an attachment into memory (for inline media rendering).
- */
-public func hashtreeDownloadBytes(nhash: String, readServers: [String])throws  -> Data {
-    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeNdrError.lift) {
-    uniffi_ndr_ffi_fn_func_hashtree_download_bytes(
-        FfiConverterString.lower(nhash),
-        FfiConverterSequenceString.lower(readServers),$0
-    )
-})
-}
-/**
- * Download and decrypt an attachment directly to disk via streaming IO.
- */
-public func hashtreeDownloadToFile(nhash: String, outputPath: String, readServers: [String])throws  {try rustCallWithError(FfiConverterTypeNdrError.lift) {
-    uniffi_ndr_ffi_fn_func_hashtree_download_to_file(
-        FfiConverterString.lower(nhash),
-        FfiConverterString.lower(outputPath),
-        FfiConverterSequenceString.lower(readServers),$0
-    )
-}
-}
-/**
- * Compute an `nhash1...` identifier for a local file without uploading.
- */
-public func hashtreeNhashFromFile(filePath: String)throws  -> String {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeNdrError.lift) {
-    uniffi_ndr_ffi_fn_func_hashtree_nhash_from_file(
-        FfiConverterString.lower(filePath),$0
-    )
-})
-}
-/**
- * Upload a file via hashtree/Blossom and return its deterministic `nhash1...`.
- */
-public func hashtreeUploadFile(privkeyHex: String, filePath: String, readServers: [String], writeServers: [String])throws  -> String {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeNdrError.lift) {
-    uniffi_ndr_ffi_fn_func_hashtree_upload_file(
-        FfiConverterString.lower(privkeyHex),
-        FfiConverterString.lower(filePath),
-        FfiConverterSequenceString.lower(readServers),
-        FfiConverterSequenceString.lower(writeServers),$0
-    )
-})
-}
-/**
  * Parse an AppKeys event JSON and return the contained device entries.
  */
 public func parseAppKeysEvent(eventJson: String)throws  -> [FfiDeviceEntry] {
@@ -3095,18 +3022,6 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_ndr_ffi_checksum_func_generate_keypair() != 56100) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_ndr_ffi_checksum_func_hashtree_download_bytes() != 4843) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_ndr_ffi_checksum_func_hashtree_download_to_file() != 602) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_ndr_ffi_checksum_func_hashtree_nhash_from_file() != 19710) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_ndr_ffi_checksum_func_hashtree_upload_file() != 31044) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_ndr_ffi_checksum_func_parse_app_keys_event() != 33390) {

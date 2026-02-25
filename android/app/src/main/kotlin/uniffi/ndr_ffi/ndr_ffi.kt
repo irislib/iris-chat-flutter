@@ -820,14 +820,6 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
-
-
-
-
-
-
-
-
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -957,14 +949,6 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_ndr_ffi_fn_func_generate_keypair(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    fun uniffi_ndr_ffi_fn_func_hashtree_download_bytes(`nhash`: RustBuffer.ByValue,`readServers`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    fun uniffi_ndr_ffi_fn_func_hashtree_download_to_file(`nhash`: RustBuffer.ByValue,`outputPath`: RustBuffer.ByValue,`readServers`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
-    fun uniffi_ndr_ffi_fn_func_hashtree_nhash_from_file(`filePath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    fun uniffi_ndr_ffi_fn_func_hashtree_upload_file(`privkeyHex`: RustBuffer.ByValue,`filePath`: RustBuffer.ByValue,`readServers`: RustBuffer.ByValue,`writeServers`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
     fun uniffi_ndr_ffi_fn_func_parse_app_keys_event(`eventJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_ndr_ffi_fn_func_version(uniffi_out_err: UniffiRustCallStatus, 
@@ -1087,14 +1071,6 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_ndr_ffi_checksum_func_generate_keypair(
     ): Short
-    fun uniffi_ndr_ffi_checksum_func_hashtree_download_bytes(
-    ): Short
-    fun uniffi_ndr_ffi_checksum_func_hashtree_download_to_file(
-    ): Short
-    fun uniffi_ndr_ffi_checksum_func_hashtree_nhash_from_file(
-    ): Short
-    fun uniffi_ndr_ffi_checksum_func_hashtree_upload_file(
-    ): Short
     fun uniffi_ndr_ffi_checksum_func_parse_app_keys_event(
     ): Short
     fun uniffi_ndr_ffi_checksum_func_version(
@@ -1215,18 +1191,6 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ndr_ffi_checksum_func_generate_keypair() != 56100.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if (lib.uniffi_ndr_ffi_checksum_func_hashtree_download_bytes() != 4843.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if (lib.uniffi_ndr_ffi_checksum_func_hashtree_download_to_file() != 602.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if (lib.uniffi_ndr_ffi_checksum_func_hashtree_nhash_from_file() != 19710.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if (lib.uniffi_ndr_ffi_checksum_func_hashtree_upload_file() != 31044.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ndr_ffi_checksum_func_parse_app_keys_event() != 33390.toShort()) {
@@ -1543,25 +1507,6 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
         val byteBuf = toUtf8(value)
         buf.putInt(byteBuf.limit())
         buf.put(byteBuf)
-    }
-}
-
-/**
- * @suppress
- */
-public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
-    override fun read(buf: ByteBuffer): ByteArray {
-        val len = buf.getInt()
-        val byteArr = ByteArray(len)
-        buf.get(byteArr)
-        return byteArr
-    }
-    override fun allocationSize(value: ByteArray): ULong {
-        return 4UL + value.size.toULong()
-    }
-    override fun write(value: ByteArray, buf: ByteBuffer) {
-        buf.putInt(value.size)
-        buf.put(value)
     }
 }
 
@@ -3843,14 +3788,6 @@ sealed class NdrException: kotlin.Exception() {
             get() = "v1=${ v1 }"
     }
     
-    class AttachmentException(
-        
-        val v1: kotlin.String
-        ) : NdrException() {
-        override val message
-            get() = "v1=${ v1 }"
-    }
-    
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<NdrException> {
         override fun lift(error_buf: RustBuffer.ByValue): NdrException = FfiConverterTypeNdrError.lift(error_buf)
@@ -3886,9 +3823,6 @@ public object FfiConverterTypeNdrError : FfiConverterRustBuffer<NdrException> {
                 FfiConverterString.read(buf),
                 )
             7 -> NdrException.SessionNotReady(
-                FfiConverterString.read(buf),
-                )
-            8 -> NdrException.AttachmentException(
                 FfiConverterString.read(buf),
                 )
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
@@ -3932,11 +3866,6 @@ public object FfiConverterTypeNdrError : FfiConverterRustBuffer<NdrException> {
                 4UL
                 + FfiConverterString.allocationSize(value.v1)
             )
-            is NdrException.AttachmentException -> (
-                // Add the size for the Int that specifies the variant plus the size needed for all fields
-                4UL
-                + FfiConverterString.allocationSize(value.v1)
-            )
         }
     }
 
@@ -3974,11 +3903,6 @@ public object FfiConverterTypeNdrError : FfiConverterRustBuffer<NdrException> {
             }
             is NdrException.SessionNotReady -> {
                 buf.putInt(7)
-                FfiConverterString.write(value.v1, buf)
-                Unit
-            }
-            is NdrException.AttachmentException -> {
-                buf.putInt(8)
                 FfiConverterString.write(value.v1, buf)
                 Unit
             }
@@ -4323,57 +4247,6 @@ public object FfiConverterSequenceTypePubSubEvent: FfiConverterRustBuffer<List<P
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ndr_ffi_fn_func_generate_keypair(
         _status)
-}
-    )
-    }
-    
-
-        /**
-         * Download and decrypt an attachment into memory (for inline media rendering).
-         */
-    @Throws(NdrException::class) fun `hashtreeDownloadBytes`(`nhash`: kotlin.String, `readServers`: List<kotlin.String>): kotlin.ByteArray {
-            return FfiConverterByteArray.lift(
-    uniffiRustCallWithError(NdrException) { _status ->
-    UniffiLib.INSTANCE.uniffi_ndr_ffi_fn_func_hashtree_download_bytes(
-        FfiConverterString.lower(`nhash`),FfiConverterSequenceString.lower(`readServers`),_status)
-}
-    )
-    }
-    
-
-        /**
-         * Download and decrypt an attachment directly to disk via streaming IO.
-         */
-    @Throws(NdrException::class) fun `hashtreeDownloadToFile`(`nhash`: kotlin.String, `outputPath`: kotlin.String, `readServers`: List<kotlin.String>)
-        = 
-    uniffiRustCallWithError(NdrException) { _status ->
-    UniffiLib.INSTANCE.uniffi_ndr_ffi_fn_func_hashtree_download_to_file(
-        FfiConverterString.lower(`nhash`),FfiConverterString.lower(`outputPath`),FfiConverterSequenceString.lower(`readServers`),_status)
-}
-    
-    
-
-        /**
-         * Compute an `nhash1...` identifier for a local file without uploading.
-         */
-    @Throws(NdrException::class) fun `hashtreeNhashFromFile`(`filePath`: kotlin.String): kotlin.String {
-            return FfiConverterString.lift(
-    uniffiRustCallWithError(NdrException) { _status ->
-    UniffiLib.INSTANCE.uniffi_ndr_ffi_fn_func_hashtree_nhash_from_file(
-        FfiConverterString.lower(`filePath`),_status)
-}
-    )
-    }
-    
-
-        /**
-         * Upload a file via hashtree/Blossom and return its deterministic `nhash1...`.
-         */
-    @Throws(NdrException::class) fun `hashtreeUploadFile`(`privkeyHex`: kotlin.String, `filePath`: kotlin.String, `readServers`: List<kotlin.String>, `writeServers`: List<kotlin.String>): kotlin.String {
-            return FfiConverterString.lift(
-    uniffiRustCallWithError(NdrException) { _status ->
-    UniffiLib.INSTANCE.uniffi_ndr_ffi_fn_func_hashtree_upload_file(
-        FfiConverterString.lower(`privkeyHex`),FfiConverterString.lower(`filePath`),FfiConverterSequenceString.lower(`readServers`),FfiConverterSequenceString.lower(`writeServers`),_status)
 }
     )
     }
