@@ -1,7 +1,12 @@
+import 'package:nostr/nostr.dart' as nostr;
+
 import '../../../../core/ffi/ndr_ffi.dart';
 import '../../../../core/services/secure_storage_service.dart';
 import '../../domain/models/identity.dart';
 import '../../domain/repositories/auth_repository.dart';
+
+const _invalidLoginPrivateKeyMessage =
+    'Invalid private key format. Expected nsec.';
 
 /// Implementation of [AuthRepository] using ndr-ffi and secure storage.
 class AuthRepositoryImpl implements AuthRepository {
@@ -20,31 +25,25 @@ class AuthRepositoryImpl implements AuthRepository {
       pubkeyHex: keypair.publicKeyHex,
     );
 
-    return Identity(
-      pubkeyHex: keypair.publicKeyHex,
-      createdAt: DateTime.now(),
-    );
+    return Identity(pubkeyHex: keypair.publicKeyHex, createdAt: DateTime.now());
   }
 
   @override
-  Future<Identity> login(String privkeyHex) async {
-    // Validate key format
-    if (!_isValidPrivateKey(privkeyHex)) {
-      throw const InvalidKeyException('Invalid private key format');
-    }
+  Future<Identity> login(String privateKeyNsec) async {
+    final normalizedPrivkeyHex = _normalizePrivateKeyNsec(privateKeyNsec);
 
     // Derive public key from private key
     // For now, we'll need to implement this or use the FFI
     // The ndr-ffi library should provide this functionality
-    final pubkeyHex = await _derivePublicKey(privkeyHex);
+    final pubkeyHex = await _derivePublicKey(normalizedPrivkeyHex);
 
     // Store keys securely
-    await _storage.saveIdentity(privkeyHex: privkeyHex, pubkeyHex: pubkeyHex);
-
-    return Identity(
+    await _storage.saveIdentity(
+      privkeyHex: normalizedPrivkeyHex,
       pubkeyHex: pubkeyHex,
-      createdAt: DateTime.now(),
     );
+
+    return Identity(pubkeyHex: pubkeyHex, createdAt: DateTime.now());
   }
 
   @override
@@ -69,10 +68,7 @@ class AuthRepositoryImpl implements AuthRepository {
       pubkeyHex: ownerPubkeyHex,
     );
 
-    return Identity(
-      pubkeyHex: ownerPubkeyHex,
-      createdAt: DateTime.now(),
-    );
+    return Identity(pubkeyHex: ownerPubkeyHex, createdAt: DateTime.now());
   }
 
   @override
@@ -107,6 +103,39 @@ class AuthRepositoryImpl implements AuthRepository {
     } catch (_) {
       return null;
     }
+  }
+
+  String _normalizePrivateKeyNsec(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      throw const InvalidKeyException(_invalidLoginPrivateKeyMessage);
+    }
+
+    var candidate = trimmed;
+    if (candidate.toLowerCase().startsWith('nostr:')) {
+      candidate = candidate.substring('nostr:'.length).trim();
+    }
+
+    final nsecMatch = RegExp(
+      r'nsec1[0-9a-z]+',
+      caseSensitive: false,
+    ).firstMatch(candidate);
+    final nsecCandidate = nsecMatch?.group(0);
+    if (nsecCandidate != null && nsecCandidate.isNotEmpty) {
+      try {
+        final decoded = nostr.Nip19.decodePrivkey(
+          nsecCandidate,
+        ).trim().toLowerCase();
+        if (_isValidPrivateKey(decoded)) {
+          return decoded;
+        }
+      } catch (_) {
+        // Ignore and throw a consistent InvalidKeyException below.
+      }
+      throw const InvalidKeyException(_invalidLoginPrivateKeyMessage);
+    }
+
+    throw const InvalidKeyException(_invalidLoginPrivateKeyMessage);
   }
 
   bool _isValidPrivateKey(String hex) {

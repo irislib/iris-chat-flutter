@@ -13,6 +13,7 @@ import 'package:iris_chat/core/services/startup_launch_service.dart';
 import 'package:iris_chat/features/auth/domain/repositories/auth_repository.dart';
 import 'package:iris_chat/features/settings/presentation/screens/settings_screen.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 import '../test_helpers.dart';
 
@@ -279,6 +280,8 @@ void main() {
         when(
           () => mockAuthRepo.getPrivateKey(),
         ).thenAnswer((_) async => testPrivkeyHex);
+        final expectedNsec =
+            nostr.Nip19.encodePrivkey(testPrivkeyHex) as String;
 
         await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
         await tester.pumpAndSettle();
@@ -290,7 +293,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Your Private Key'), findsOneWidget);
-        expect(find.text(testPrivkeyHex), findsOneWidget);
+        expect(find.text(expectedNsec), findsOneWidget);
         expect(find.text('Copy'), findsOneWidget);
       });
     });

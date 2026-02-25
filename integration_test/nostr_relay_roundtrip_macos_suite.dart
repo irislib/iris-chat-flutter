@@ -12,7 +12,9 @@ import 'package:iris_chat/core/services/secure_storage_service.dart';
 import 'package:iris_chat/core/utils/invite_url.dart';
 import 'package:iris_chat/core/utils/nostr_rumor.dart';
 import 'package:iris_chat/features/auth/data/repositories/auth_repository_impl.dart';
+import 'package:iris_chat/features/auth/domain/models/identity.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 import 'test_relay.dart';
 
@@ -205,6 +207,37 @@ Future<void> _pumpRounds({
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('auth login import: nsec accepted, raw hex rejected', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    if (!Platform.isMacOS) {
+      return;
+    }
+
+    final repo = AuthRepositoryImpl(_createInMemorySecureStorage());
+
+    final createdIdentity = await repo.createIdentity();
+    final storedPrivkeyHex = await repo.getPrivateKey();
+    expect(storedPrivkeyHex, isNotNull);
+
+    final privateKeyNsec =
+        nostr.Nip19.encodePrivkey(storedPrivkeyHex!) as String;
+
+    await repo.logout();
+    expect(await repo.getCurrentIdentity(), isNull);
+
+    final importedIdentity = await repo.login(privateKeyNsec);
+    expect(importedIdentity.pubkeyHex, createdIdentity.pubkeyHex);
+
+    await repo.logout();
+    expect(
+      () => repo.login(storedPrivkeyHex),
+      throwsA(isA<InvalidKeyException>()),
+    );
+  });
 
   testWidgets(
     'two instances: relay roundtrip + reconnect (subscribe before connect)',

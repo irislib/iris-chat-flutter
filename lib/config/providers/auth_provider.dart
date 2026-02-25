@@ -89,18 +89,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isInitialized: true,
       );
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.toString(),
-      );
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
-  /// Login with an existing private key.
-  Future<void> login(String privkeyHex) async {
+  /// Login with an existing private key in `nsec` format.
+  Future<void> login(String privateKeyNsec) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final identity = await _repository.login(privkeyHex);
+      final identity = await _repository.login(privateKeyNsec);
       state = state.copyWith(
         isAuthenticated: true,
         isLoading: false,
@@ -110,15 +107,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isInitialized: true,
       );
     } on InvalidKeyException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.message,
-      );
+      state = state.copyWith(isLoading: false, error: e.message);
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.toString(),
-      );
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
@@ -145,15 +136,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isInitialized: true,
       );
     } on InvalidKeyException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.message,
-      );
+      state = state.copyWith(isLoading: false, error: e.message);
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.toString(),
-      );
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 

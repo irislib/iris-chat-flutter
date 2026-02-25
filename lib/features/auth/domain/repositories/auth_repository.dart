@@ -5,10 +5,10 @@ abstract class AuthRepository {
   /// Create a new identity with a generated keypair.
   Future<Identity> createIdentity();
 
-  /// Login with an existing private key.
+  /// Login with an existing private key in `nsec` (NIP-19) format.
   ///
   /// Throws [InvalidKeyException] if the key is invalid.
-  Future<Identity> login(String privkeyHex);
+  Future<Identity> login(String privateKeyNsec);
 
   /// Login as a linked device using a device private key and an owner pubkey.
   ///

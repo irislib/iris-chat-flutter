@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nostr/nostr.dart' as nostr;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../config/providers/auth_provider.dart';
@@ -280,6 +281,7 @@ class SettingsScreen extends ConsumerWidget {
       final privkey = await authRepo.getPrivateKey();
 
       if (privkey != null && context.mounted) {
+        final exportableKey = _toExportableNsec(privkey);
         await showDialog(
           context: context,
           builder: (context) => AlertDialog(
@@ -296,7 +298,7 @@ class SettingsScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SelectableText(
-                    privkey,
+                    exportableKey,
                     style: const TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,
@@ -313,7 +315,7 @@ class SettingsScreen extends ConsumerWidget {
             actions: [
               TextButton(
                 onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: privkey));
+                  await Clipboard.setData(ClipboardData(text: exportableKey));
                   if (context.mounted) {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -332,6 +334,23 @@ class SettingsScreen extends ConsumerWidget {
         );
       }
     }
+  }
+
+  String _toExportableNsec(String privateKey) {
+    final normalized = privateKey.trim().toLowerCase();
+
+    // Existing installs store the private key as 64-char hex. Convert to nsec
+    // so exported keys can be re-imported through the nsec-only login flow.
+    if (RegExp(r'^[0-9a-f]{64}$').hasMatch(normalized)) {
+      try {
+        final encoded = nostr.Nip19.encodePrivkey(normalized);
+        if (encoded is String && encoded.isNotEmpty) {
+          return encoded;
+        }
+      } catch (_) {}
+    }
+
+    return privateKey;
   }
 
   Future<void> _confirmLogout(BuildContext context, WidgetRef ref) async {
