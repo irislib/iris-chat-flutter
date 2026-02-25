@@ -7,6 +7,7 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
     this.typingEnabled = true,
     this.deliveryEnabled = true,
     this.readEnabled = true,
+    this.desktopNotificationsEnabled = true,
     this.throwOnLoad = false,
     this.throwOnTyping = false,
   });
@@ -14,6 +15,7 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
   bool typingEnabled;
   bool deliveryEnabled;
   bool readEnabled;
+  bool desktopNotificationsEnabled;
   final bool throwOnLoad;
   final bool throwOnTyping;
 
@@ -24,6 +26,7 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
       typingIndicatorsEnabled: typingEnabled,
       deliveryReceiptsEnabled: deliveryEnabled,
       readReceiptsEnabled: readEnabled,
+      desktopNotificationsEnabled: desktopNotificationsEnabled,
     );
   }
 
@@ -51,6 +54,14 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
     readEnabled = value;
     return load();
   }
+
+  @override
+  Future<MessagingPreferencesSnapshot> setDesktopNotificationsEnabled(
+    bool value,
+  ) async {
+    desktopNotificationsEnabled = value;
+    return load();
+  }
 }
 
 void main() {
@@ -61,6 +72,7 @@ void main() {
           typingEnabled: false,
           deliveryEnabled: true,
           readEnabled: false,
+          desktopNotificationsEnabled: false,
         ),
         autoLoad: false,
       );
@@ -71,6 +83,7 @@ void main() {
       expect(notifier.state.typingIndicatorsEnabled, isFalse);
       expect(notifier.state.deliveryReceiptsEnabled, isTrue);
       expect(notifier.state.readReceiptsEnabled, isFalse);
+      expect(notifier.state.desktopNotificationsEnabled, isFalse);
       expect(notifier.state.error, isNull);
     });
 
@@ -84,6 +97,19 @@ void main() {
       await notifier.setTypingIndicatorsEnabled(false);
 
       expect(notifier.state.typingIndicatorsEnabled, isFalse);
+      expect(notifier.state.error, isNull);
+    });
+
+    test('setDesktopNotificationsEnabled updates state', () async {
+      final notifier = MessagingPreferencesNotifier(
+        FakeMessagingPreferencesService(),
+        autoLoad: false,
+      );
+      await notifier.load();
+
+      await notifier.setDesktopNotificationsEnabled(false);
+
+      expect(notifier.state.desktopNotificationsEnabled, isFalse);
       expect(notifier.state.error, isNull);
     });
 

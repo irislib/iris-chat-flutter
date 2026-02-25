@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iris_chat/config/providers/auth_provider.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
+import 'package:iris_chat/config/providers/desktop_notification_provider.dart';
 import 'package:iris_chat/config/providers/messaging_preferences_provider.dart';
 import 'package:iris_chat/config/providers/startup_launch_provider.dart';
 import 'package:iris_chat/core/services/database_service.dart';
@@ -43,14 +44,17 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
     this.typingIndicatorsEnabled = true,
     this.deliveryReceiptsEnabled = true,
     this.readReceiptsEnabled = true,
+    this.desktopNotificationsEnabled = true,
   });
 
   bool typingIndicatorsEnabled;
   bool deliveryReceiptsEnabled;
   bool readReceiptsEnabled;
+  bool desktopNotificationsEnabled;
   int setTypingCalls = 0;
   int setDeliveryCalls = 0;
   int setReadCalls = 0;
+  int setDesktopNotificationsCalls = 0;
 
   @override
   Future<MessagingPreferencesSnapshot> load() async {
@@ -58,6 +62,7 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
       typingIndicatorsEnabled: typingIndicatorsEnabled,
       deliveryReceiptsEnabled: deliveryReceiptsEnabled,
       readReceiptsEnabled: readReceiptsEnabled,
+      desktopNotificationsEnabled: desktopNotificationsEnabled,
     );
   }
 
@@ -87,6 +92,15 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
     readReceiptsEnabled = value;
     return load();
   }
+
+  @override
+  Future<MessagingPreferencesSnapshot> setDesktopNotificationsEnabled(
+    bool value,
+  ) async {
+    setDesktopNotificationsCalls += 1;
+    desktopNotificationsEnabled = value;
+    return load();
+  }
 }
 
 void main() {
@@ -107,28 +121,38 @@ void main() {
     bool isAuthenticated = true,
     FakeStartupLaunchService? startupService,
     FakeMessagingPreferencesService? messagingService,
+    bool? desktopNotificationsSupported,
   }) {
+    final overrides = [
+      authRepositoryProvider.overrideWithValue(mockAuthRepo),
+      databaseServiceProvider.overrideWithValue(mockDbService),
+      startupLaunchServiceProvider.overrideWithValue(
+        startupService ?? startupLaunchService,
+      ),
+      messagingPreferencesServiceProvider.overrideWithValue(
+        messagingService ?? messagingPreferencesService,
+      ),
+      authStateProvider.overrideWith((ref) {
+        final notifier = AuthNotifier(mockAuthRepo);
+        notifier.state = AuthState(
+          isAuthenticated: isAuthenticated,
+          pubkeyHex: pubkeyHex,
+          isInitialized: true,
+        );
+        return notifier;
+      }),
+    ];
+    if (desktopNotificationsSupported != null) {
+      overrides.add(
+        desktopNotificationsSupportedProvider.overrideWith(
+          (ref) => desktopNotificationsSupported,
+        ),
+      );
+    }
+
     return createTestApp(
       const SettingsScreen(),
-      overrides: [
-        authRepositoryProvider.overrideWithValue(mockAuthRepo),
-        databaseServiceProvider.overrideWithValue(mockDbService),
-        startupLaunchServiceProvider.overrideWithValue(
-          startupService ?? startupLaunchService,
-        ),
-        messagingPreferencesServiceProvider.overrideWithValue(
-          messagingService ?? messagingPreferencesService,
-        ),
-        authStateProvider.overrideWith((ref) {
-          final notifier = AuthNotifier(mockAuthRepo);
-          notifier.state = AuthState(
-            isAuthenticated: isAuthenticated,
-            pubkeyHex: pubkeyHex,
-            isInitialized: true,
-          );
-          return notifier;
-        }),
-      ],
+      overrides: overrides,
     );
   }
 
@@ -305,7 +329,7 @@ void main() {
         await tester.scrollUntilVisible(find.text('Application'), 300);
         expect(find.text('Application'), findsOneWidget);
         expect(find.text('Launch on System Startup'), findsOneWidget);
-        expect(find.byType(Switch), findsNWidgets(4));
+        expect(find.byType(Switch), findsAtLeastNWidgets(4));
       });
 
       testWidgets('hides startup toggle when platform is unsupported', (
@@ -353,14 +377,20 @@ void main() {
 
     group('messaging section', () {
       testWidgets('shows messaging toggles', (tester) async {
-        await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            desktopNotificationsSupported: true,
+          ),
+        );
         await tester.pumpAndSettle();
-        await tester.scrollUntilVisible(find.text('Send Read Receipts'), 300);
+        await tester.scrollUntilVisible(find.text('Desktop Notifications'), 300);
 
         expect(find.text('Messaging'), findsOneWidget);
         expect(find.text('Send Typing Indicators'), findsOneWidget);
         expect(find.text('Send Delivery Receipts'), findsOneWidget);
         expect(find.text('Send Read Receipts'), findsOneWidget);
+        expect(find.text('Desktop Notifications'), findsOneWidget);
       });
 
       testWidgets('updates typing indicator preference when toggled', (
@@ -386,6 +416,29 @@ void main() {
 
         expect(service.setTypingCalls, 1);
         expect(service.typingIndicatorsEnabled, isFalse);
+      });
+
+      testWidgets('updates desktop notifications preference when toggled', (
+        tester,
+      ) async {
+        final service = FakeMessagingPreferencesService(
+          desktopNotificationsEnabled: true,
+        );
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            messagingService: service,
+            desktopNotificationsSupported: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(find.text('Desktop Notifications'), 300);
+
+        await tester.tap(find.text('Desktop Notifications'));
+        await tester.pumpAndSettle();
+
+        expect(service.setDesktopNotificationsCalls, 1);
+        expect(service.desktopNotificationsEnabled, isFalse);
       });
     });
 
@@ -428,8 +481,11 @@ void main() {
         await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
         await tester.pumpAndSettle();
 
-        await tester.scrollUntilVisible(find.text('Logout'), 300);
-        await tester.tap(find.text('Logout'));
+        final logoutTile = find.widgetWithText(ListTile, 'Logout');
+        await tester.scrollUntilVisible(logoutTile, 300);
+        await tester.drag(find.byType(ListView), const Offset(0, -140));
+        await tester.pumpAndSettle();
+        await tester.tap(logoutTile);
         await tester.pumpAndSettle();
 
         expect(find.text('Logout?'), findsOneWidget);
@@ -461,8 +517,11 @@ void main() {
         await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
         await tester.pumpAndSettle();
 
-        await tester.scrollUntilVisible(find.text('Logout'), 300);
-        await tester.tap(find.text('Logout'));
+        final logoutTile = find.widgetWithText(ListTile, 'Logout');
+        await tester.scrollUntilVisible(logoutTile, 300);
+        await tester.drag(find.byType(ListView), const Offset(0, -140));
+        await tester.pumpAndSettle();
+        await tester.tap(logoutTile);
         await tester.pumpAndSettle();
 
         await tester.tap(find.text('Cancel'));

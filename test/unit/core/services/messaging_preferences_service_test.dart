@@ -17,6 +17,7 @@ void main() {
       expect(snapshot.typingIndicatorsEnabled, isTrue);
       expect(snapshot.deliveryReceiptsEnabled, isTrue);
       expect(snapshot.readReceiptsEnabled, isTrue);
+      expect(snapshot.desktopNotificationsEnabled, isTrue);
     });
 
     test('setTypingIndicatorsEnabled persists value', () async {
@@ -56,6 +57,19 @@ void main() {
       expect(snapshot.readReceiptsEnabled, isFalse);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('settings.read_receipts_enabled'), isFalse);
+    });
+
+    test('setDesktopNotificationsEnabled persists value', () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = MessagingPreferencesServiceImpl(
+        preferencesFactory: SharedPreferences.getInstance,
+      );
+
+      final snapshot = await service.setDesktopNotificationsEnabled(false);
+
+      expect(snapshot.desktopNotificationsEnabled, isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('settings.desktop_notifications_enabled'), isFalse);
     });
   });
 }

@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
+import 'package:iris_chat/core/services/app_focus_service.dart';
+import 'package:iris_chat/core/services/desktop_notification_service.dart';
+import 'package:iris_chat/core/services/inbound_activity_policy.dart';
 import 'package:iris_chat/core/services/session_manager_service.dart';
 import 'package:iris_chat/features/chat/data/datasources/message_local_datasource.dart';
 import 'package:iris_chat/features/chat/data/datasources/session_local_datasource.dart';
@@ -15,20 +18,67 @@ class MockSessionLocalDatasource extends Mock
 
 class MockSessionManagerService extends Mock implements SessionManagerService {}
 
+class FakeDesktopNotificationService implements DesktopNotificationService {
+  int messageCalls = 0;
+  int reactionCalls = 0;
+  bool? lastMessageEnabled;
+  bool? lastReactionEnabled;
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<void> showIncomingMessage({
+    required bool enabled,
+    required String conversationTitle,
+    required String body,
+  }) async {
+    messageCalls += 1;
+    lastMessageEnabled = enabled;
+  }
+
+  @override
+  Future<void> showIncomingReaction({
+    required bool enabled,
+    required String conversationTitle,
+    required String emoji,
+    required String targetPreview,
+  }) async {
+    reactionCalls += 1;
+    lastReactionEnabled = enabled;
+  }
+}
+
+class FakeAppFocusState implements AppFocusState {
+  FakeAppFocusState({required this.isAppFocused});
+
+  @override
+  bool isAppFocused;
+}
+
 void main() {
   late ChatNotifier notifier;
   late MockMessageLocalDatasource mockMessageDatasource;
   late MockSessionLocalDatasource mockSessionDatasource;
   late MockSessionManagerService mockSessionManagerService;
+  late FakeDesktopNotificationService fakeDesktopNotificationService;
+  late FakeAppFocusState fakeAppFocusState;
 
   setUp(() {
     mockMessageDatasource = MockMessageLocalDatasource();
     mockSessionDatasource = MockSessionLocalDatasource();
     mockSessionManagerService = MockSessionManagerService();
+    fakeDesktopNotificationService = FakeDesktopNotificationService();
+    fakeAppFocusState = FakeAppFocusState(isAppFocused: true);
     notifier = ChatNotifier(
       mockMessageDatasource,
       mockSessionDatasource,
       mockSessionManagerService,
+      desktopNotificationService: fakeDesktopNotificationService,
+      inboundActivityPolicy: InboundActivityPolicy(
+        appFocusState: fakeAppFocusState,
+        appOpenedAt: DateTime.fromMillisecondsSinceEpoch(0),
+      ),
     );
   });
 
@@ -423,6 +473,7 @@ void main() {
             typingIndicatorsEnabled: false,
             deliveryReceiptsEnabled: true,
             readReceiptsEnabled: true,
+            desktopNotificationsEnabled: true,
           );
 
           await notifier.notifyTyping('session-1');
@@ -547,6 +598,34 @@ void main() {
     });
 
     group('receipts preferences', () {
+      test('markSessionSeen does nothing while app is unfocused', () async {
+        final unfocusedNotifier = ChatNotifier(
+          mockMessageDatasource,
+          mockSessionDatasource,
+          mockSessionManagerService,
+          desktopNotificationService: fakeDesktopNotificationService,
+          inboundActivityPolicy: InboundActivityPolicy(
+            appFocusState: FakeAppFocusState(isAppFocused: false),
+            appOpenedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        );
+
+        await unfocusedNotifier.markSessionSeen('session-1');
+
+        verifyNever(() => mockSessionDatasource.getSession(any()));
+        verifyNever(
+          () =>
+              mockMessageDatasource.updateIncomingStatusByRumorId(any(), any()),
+        );
+        verifyNever(
+          () => mockSessionManagerService.sendReceipt(
+            recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+            receiptType: any(named: 'receiptType'),
+            messageIds: any(named: 'messageIds'),
+          ),
+        );
+      });
+
       test(
         'markSessionSeen updates local state without sending when read receipts disabled',
         () async {
@@ -569,6 +648,7 @@ void main() {
             typingIndicatorsEnabled: true,
             deliveryReceiptsEnabled: true,
             readReceiptsEnabled: false,
+            desktopNotificationsEnabled: true,
           );
 
           when(
@@ -607,6 +687,109 @@ void main() {
     });
 
     group('receiveDecryptedMessage', () {
+      test('does not notify for messages created before app launch', () async {
+        const peerPubkey =
+            '2222222222222222222222222222222222222222222222222222222222222222';
+        final session = ChatSession(
+          id: 'session-1',
+          recipientPubkeyHex: peerPubkey,
+          createdAt: DateTime.now(),
+        );
+
+        final localNotificationService = FakeDesktopNotificationService();
+        final localNotifier = ChatNotifier(
+          mockMessageDatasource,
+          mockSessionDatasource,
+          mockSessionManagerService,
+          desktopNotificationService: localNotificationService,
+          inboundActivityPolicy: InboundActivityPolicy(
+            appFocusState: FakeAppFocusState(isAppFocused: false),
+            appOpenedAt: DateTime.fromMillisecondsSinceEpoch(1700000010000),
+          ),
+        );
+
+        when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+        when(
+          () => mockMessageDatasource.messageExists(any()),
+        ).thenAnswer((_) async => false);
+        when(
+          () => mockMessageDatasource.saveMessage(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockSessionDatasource.getSessionByRecipient(any()),
+        ).thenAnswer((_) async => session);
+        when(
+          () => mockSessionManagerService.sendReceipt(
+            recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+            receiptType: any(named: 'receiptType'),
+            messageIds: any(named: 'messageIds'),
+          ),
+        ).thenAnswer((_) async {});
+
+        const messageRumorJson =
+            '{"id":"msg-old","pubkey":"$peerPubkey","created_at":1700000000,"kind":14,"content":"hello","tags":[]}';
+
+        await localNotifier.receiveDecryptedMessage(
+          peerPubkey,
+          messageRumorJson,
+        );
+
+        expect(localNotificationService.messageCalls, 0);
+      });
+
+      test('notifies for messages created after app launch', () async {
+        const peerPubkey =
+            '2222222222222222222222222222222222222222222222222222222222222222';
+        final session = ChatSession(
+          id: 'session-1',
+          recipientPubkeyHex: peerPubkey,
+          createdAt: DateTime.now(),
+        );
+
+        final localNotificationService = FakeDesktopNotificationService();
+        final localNotifier = ChatNotifier(
+          mockMessageDatasource,
+          mockSessionDatasource,
+          mockSessionManagerService,
+          desktopNotificationService: localNotificationService,
+          inboundActivityPolicy: InboundActivityPolicy(
+            appFocusState: FakeAppFocusState(isAppFocused: false),
+            appOpenedAt: DateTime.fromMillisecondsSinceEpoch(1700000000000),
+          ),
+        );
+
+        when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+        when(
+          () => mockMessageDatasource.messageExists(any()),
+        ).thenAnswer((_) async => false);
+        when(
+          () => mockMessageDatasource.saveMessage(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockSessionDatasource.getSessionByRecipient(any()),
+        ).thenAnswer((_) async => session);
+        when(
+          () => mockSessionDatasource.getSession('session-1'),
+        ).thenAnswer((_) async => session);
+        when(
+          () => mockSessionManagerService.sendReceipt(
+            recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+            receiptType: any(named: 'receiptType'),
+            messageIds: any(named: 'messageIds'),
+          ),
+        ).thenAnswer((_) async {});
+
+        const messageRumorJson =
+            '{"id":"msg-new","pubkey":"$peerPubkey","created_at":1700000001,"kind":14,"content":"hello","tags":[]}';
+
+        await localNotifier.receiveDecryptedMessage(
+          peerPubkey,
+          messageRumorJson,
+        );
+
+        expect(localNotificationService.messageCalls, 1);
+      });
+
       test(
         'applies typing when event second matches last message second with ms precision',
         () async {
@@ -831,6 +1014,7 @@ void main() {
             typingIndicatorsEnabled: true,
             deliveryReceiptsEnabled: false,
             readReceiptsEnabled: true,
+            desktopNotificationsEnabled: true,
           );
 
           when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);

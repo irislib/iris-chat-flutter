@@ -16,6 +16,7 @@ import '../../domain/models/message.dart';
 import '../../domain/models/session.dart';
 import '../../domain/utils/chat_settings.dart';
 import '../utils/attachment_upload.dart';
+import '../utils/seen_sync_mixin.dart';
 import '../widgets/chat_message_bubble.dart';
 import '../widgets/message_input.dart';
 import '../widgets/typing_dots.dart';
@@ -33,7 +34,8 @@ class ChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen> {
+class _ChatScreenState extends ConsumerState<ChatScreen>
+    with SeenSyncMixin<ChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   final _composerFocusNode = FocusNode();
@@ -51,22 +53,47 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    initSeenSyncObserver();
     _scrollController.addListener(_onScroll);
 
     // Load messages and clear unread
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(chatStateProvider.notifier).loadMessages(widget.sessionId);
-      ref.read(chatStateProvider.notifier).markSessionSeen(widget.sessionId);
-      ref.read(sessionStateProvider.notifier).clearUnread(widget.sessionId);
+      unawaited(() async {
+        await ref
+            .read(chatStateProvider.notifier)
+            .loadMessages(widget.sessionId);
+        scheduleSeenSync();
+      }());
     });
   }
 
   @override
   void dispose() {
+    disposeSeenSyncObserver();
     _messageController.dispose();
     _scrollController.dispose();
     _composerFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  bool get hasUnseenIncomingMessages {
+    final messages = ref.read(sessionMessagesProvider(widget.sessionId));
+    return messages.any((m) => m.isIncoming && m.status != MessageStatus.seen);
+  }
+
+  @override
+  Future<void> markConversationSeen() {
+    return ref
+        .read(chatStateProvider.notifier)
+        .markSessionSeen(widget.sessionId);
+  }
+
+  @override
+  Future<void> afterConversationSeen() {
+    return ref
+        .read(sessionStateProvider.notifier)
+        .clearUnread(widget.sessionId);
   }
 
   void _onScroll() {
@@ -411,6 +438,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
     );
     final messages = ref.watch(sessionMessagesProvider(widget.sessionId));
+    scheduleSeenSync();
     final isTyping = ref.watch(
       chatStateProvider.select(
         (s) =>

@@ -15,6 +15,7 @@ import '../../../../shared/utils/formatters.dart';
 import '../../domain/models/group.dart';
 import '../../domain/models/message.dart';
 import '../utils/attachment_upload.dart';
+import '../utils/seen_sync_mixin.dart';
 import '../widgets/chat_message_bubble.dart';
 import '../widgets/message_input.dart';
 import '../widgets/typing_dots.dart';
@@ -30,7 +31,8 @@ class GroupChatScreen extends ConsumerStatefulWidget {
   ConsumerState<GroupChatScreen> createState() => _GroupChatScreenState();
 }
 
-class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
+class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
+    with SeenSyncMixin<GroupChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   final _composerFocusNode = FocusNode();
@@ -44,22 +46,39 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
   @override
   void initState() {
     super.initState();
+    initSeenSyncObserver();
     _scrollController.addListener(_onScroll);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Best-effort load: navigation can happen before the list screen initializes.
-      ref.read(groupStateProvider.notifier).loadGroups();
-      ref.read(groupStateProvider.notifier).loadGroupMessages(widget.groupId);
-      ref.read(groupStateProvider.notifier).markGroupSeen(widget.groupId);
+      unawaited(() async {
+        // Best-effort load: navigation can happen before the list screen initializes.
+        await ref.read(groupStateProvider.notifier).loadGroups();
+        await ref
+            .read(groupStateProvider.notifier)
+            .loadGroupMessages(widget.groupId);
+        scheduleSeenSync();
+      }());
     });
   }
 
   @override
   void dispose() {
+    disposeSeenSyncObserver();
     _messageController.dispose();
     _scrollController.dispose();
     _composerFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  bool get hasUnseenIncomingMessages {
+    final messages = ref.read(groupMessagesProvider(widget.groupId));
+    return messages.any((m) => m.isIncoming && m.status != MessageStatus.seen);
+  }
+
+  @override
+  Future<void> markConversationSeen() {
+    return ref.read(groupStateProvider.notifier).markGroupSeen(widget.groupId);
   }
 
   void _onScroll() {
@@ -334,6 +353,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
     }
 
     final messages = ref.watch(groupMessagesProvider(widget.groupId));
+    scheduleSeenSync();
     final isTyping = ref.watch(
       groupStateProvider.select((s) => s.typingStates[widget.groupId] ?? false),
     );

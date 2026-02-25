@@ -1,0 +1,1127 @@
+part of 'chat_provider.dart';
+
+class _AlwaysFocusedAppFocusState implements AppFocusState {
+  const _AlwaysFocusedAppFocusState();
+
+  @override
+  bool get isAppFocused => true;
+}
+
+/// Notifier for chat messages.
+class ChatNotifier extends StateNotifier<ChatState> {
+  ChatNotifier(
+    this._messageDatasource,
+    this._sessionDatasource,
+    this._sessionManagerService, {
+    DesktopNotificationService? desktopNotificationService,
+    InboundActivityPolicy? inboundActivityPolicy,
+  }) : _desktopNotificationService =
+           desktopNotificationService ?? const NoopDesktopNotificationService(),
+       _inboundActivityPolicy =
+           inboundActivityPolicy ??
+           InboundActivityPolicy(
+             appFocusState: const _AlwaysFocusedAppFocusState(),
+             appOpenedAt: DateTime.now(),
+           ),
+       super(const ChatState());
+
+  final MessageLocalDatasource _messageDatasource;
+  final SessionLocalDatasource _sessionDatasource;
+  final SessionManagerService _sessionManagerService;
+  final DesktopNotificationService _desktopNotificationService;
+  final InboundActivityPolicy _inboundActivityPolicy;
+
+  static const int _kReactionKind = 7;
+  static const int _kChatMessageKind = 14;
+  static const int _kReceiptKind = 15;
+  static const int _kTypingKind = 25;
+
+  static const Duration _kTypingExpiry = Duration(seconds: 10);
+  static const Duration _kTypingThrottle = Duration(seconds: 3);
+
+  final Map<String, Timer> _typingExpiryTimers = {};
+  final Map<String, int> _lastTypingSentAtMs = {};
+  final Map<String, int> _lastRemoteTypingAtMs = {};
+  bool _typingIndicatorsEnabled = true;
+  bool _deliveryReceiptsEnabled = true;
+  bool _readReceiptsEnabled = true;
+  bool _desktopNotificationsEnabled = true;
+
+  void setOutboundSignalSettings({
+    required bool typingIndicatorsEnabled,
+    required bool deliveryReceiptsEnabled,
+    required bool readReceiptsEnabled,
+    required bool desktopNotificationsEnabled,
+  }) {
+    _typingIndicatorsEnabled = typingIndicatorsEnabled;
+    _deliveryReceiptsEnabled = deliveryReceiptsEnabled;
+    _readReceiptsEnabled = readReceiptsEnabled;
+    _desktopNotificationsEnabled = desktopNotificationsEnabled;
+  }
+
+  @override
+  void dispose() {
+    for (final t in _typingExpiryTimers.values) {
+      t.cancel();
+    }
+    _typingExpiryTimers.clear();
+    _lastRemoteTypingAtMs.clear();
+    super.dispose();
+  }
+
+  /// Load messages for a session.
+  Future<void> loadMessages(String sessionId, {int limit = 50}) async {
+    try {
+      final messages = await _messageDatasource.getMessagesForSession(
+        sessionId,
+        limit: limit,
+      );
+      state = state.copyWith(
+        messages: {...state.messages, sessionId: messages},
+        error: null,
+      );
+    } catch (e, st) {
+      final appError = AppError.from(e, st);
+      state = state.copyWith(error: appError.message);
+    }
+  }
+
+  /// Load more messages (pagination).
+  Future<void> loadMoreMessages(String sessionId, {int limit = 50}) async {
+    final currentMessages = state.messages[sessionId] ?? [];
+    if (currentMessages.isEmpty) {
+      return loadMessages(sessionId, limit: limit);
+    }
+
+    try {
+      final oldestMessage = currentMessages.first;
+      final olderMessages = await _messageDatasource.getMessagesForSession(
+        sessionId,
+        limit: limit,
+        beforeId: oldestMessage.id,
+      );
+
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          sessionId: [...olderMessages, ...currentMessages],
+        },
+        error: null,
+      );
+    } catch (e, st) {
+      final appError = AppError.from(e, st);
+      state = state.copyWith(error: appError.message);
+    }
+  }
+
+  /// Remove expired messages from in-memory state.
+  ///
+  /// Persistent storage cleanup is handled elsewhere; this only updates UI state.
+  void purgeExpiredFromState(int nowSeconds) {
+    if (state.messages.isEmpty) return;
+
+    var changed = false;
+    final updatedBySession = <String, List<ChatMessage>>{};
+
+    for (final entry in state.messages.entries) {
+      final filtered = entry.value
+          .where((m) => m.expiresAt == null || m.expiresAt! > nowSeconds)
+          .toList();
+      if (filtered.length != entry.value.length) changed = true;
+      updatedBySession[entry.key] = filtered;
+    }
+
+    if (!changed) return;
+    state = state.copyWith(messages: updatedBySession);
+  }
+
+  /// Add a message optimistically.
+  void addMessageOptimistic(ChatMessage message) {
+    final sessionId = message.sessionId;
+    final currentMessages = state.messages[sessionId] ?? [];
+
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        sessionId: [...currentMessages, message],
+      },
+      sendingStates: {...state.sendingStates, message.id: true},
+    );
+  }
+
+  /// Send a message.
+  Future<void> sendMessage(
+    String sessionId,
+    String text, {
+    String? replyToId,
+  }) async {
+    // Create optimistic message
+    final normalizedReplyTo = (replyToId != null && replyToId.trim().isNotEmpty)
+        ? replyToId.trim()
+        : null;
+    final message = ChatMessage.outgoing(
+      sessionId: sessionId,
+      text: text,
+      replyToId: normalizedReplyTo,
+    );
+
+    // Add to UI immediately
+    addMessageOptimistic(message);
+
+    await _sendMessageInternal(message);
+  }
+
+  /// Delete a message locally (UI + local DB only).
+  Future<void> deleteMessageLocal(String sessionId, String messageId) async {
+    final current = state.messages[sessionId] ?? const <ChatMessage>[];
+    if (current.isEmpty) return;
+
+    final updated = current.where((m) => m.id != messageId).toList();
+    final nextMessages = {...state.messages};
+    if (updated.isEmpty) {
+      nextMessages.remove(sessionId);
+    } else {
+      nextMessages[sessionId] = updated;
+    }
+
+    final nextSending = {...state.sendingStates}..remove(messageId);
+    state = state.copyWith(messages: nextMessages, sendingStates: nextSending);
+
+    try {
+      await _messageDatasource.deleteMessage(messageId);
+      // Keep session list consistent if the last message was deleted.
+      await _sessionDatasource.recomputeDerivedFieldsFromMessages(sessionId);
+    } catch (e, st) {
+      final appError = AppError.from(e, st);
+      state = state.copyWith(error: appError.message);
+    }
+  }
+
+  /// Send a queued message (called by OfflineQueueService).
+  Future<void> sendQueuedMessage(
+    String sessionId,
+    String text,
+    String messageId,
+  ) async {
+    // Find existing message or create placeholder
+    final existingMessages = state.messages[sessionId] ?? [];
+    final existingMessage = existingMessages.cast<ChatMessage?>().firstWhere(
+      (m) => m?.id == messageId,
+      orElse: () => null,
+    );
+
+    if (existingMessage != null) {
+      // Update to pending and send
+      final pendingMessage = existingMessage.copyWith(
+        status: MessageStatus.pending,
+      );
+      await _sendMessageInternal(pendingMessage);
+    } else {
+      // Message not in state, create it
+      final message = ChatMessage(
+        id: messageId,
+        sessionId: sessionId,
+        text: text,
+        timestamp: DateTime.now(),
+        direction: MessageDirection.outgoing,
+        status: MessageStatus.pending,
+      );
+      addMessageOptimistic(message);
+      await _sendMessageInternal(message);
+    }
+  }
+
+  Future<void> _sendMessageInternal(ChatMessage message) async {
+    int? expiresAtSeconds;
+    try {
+      final session = await _sessionDatasource.getSession(message.sessionId);
+      if (session == null) {
+        throw const AppError(
+          type: AppErrorType.sessionExpired,
+          message: 'Session not found. Please start a new conversation.',
+          isRetryable: false,
+        );
+      }
+
+      final ttlSeconds = session.messageTtlSeconds;
+      expiresAtSeconds = (ttlSeconds != null && ttlSeconds > 0)
+          ? (DateTime.now().millisecondsSinceEpoch ~/ 1000 + ttlSeconds)
+          : null;
+
+      final normalizedReplyTo =
+          (message.replyToId != null && message.replyToId!.trim().isNotEmpty)
+          ? message.replyToId!.trim()
+          : null;
+
+      final sendResult = normalizedReplyTo == null
+          // Fast path for normal messages.
+          ? await _sessionManagerService.sendTextWithInnerId(
+              recipientPubkeyHex: session.recipientPubkeyHex,
+              text: message.text,
+              expiresAtSeconds: expiresAtSeconds,
+            )
+          // Replies are sent with explicit tags, aligned with iris-chat / iris-client.
+          : await _sessionManagerService.sendEventWithInnerId(
+              recipientPubkeyHex: session.recipientPubkeyHex,
+              kind: _kChatMessageKind,
+              content: message.text,
+              tagsJson: jsonEncode([
+                ['p', session.recipientPubkeyHex],
+                ['e', normalizedReplyTo, '', 'reply'],
+                if (expiresAtSeconds != null)
+                  ['expiration', expiresAtSeconds.toString()],
+              ]),
+              createdAtSeconds: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            );
+
+      final outerEventIds = sendResult.outerEventIds;
+      final eventId = outerEventIds.isNotEmpty ? outerEventIds.first : null;
+      final rumorId = sendResult.innerId.isNotEmpty ? sendResult.innerId : null;
+
+      // Update message with success
+      final sentMessage = message.copyWith(
+        // `outerEventIds` can be empty even when the send succeeded (queued/offline
+        // publishes, relays without ACKs, etc). Treat a successful send call as
+        // "sent" and rely on receipts / self-echo backfill to advance further.
+        status: MessageStatus.sent,
+        eventId: eventId,
+        rumorId: rumorId,
+        expiresAt: expiresAtSeconds,
+      );
+      await updateMessage(sentMessage);
+    } catch (e, st) {
+      // Map to user-friendly error
+      final appError = e is AppError ? e : AppError.from(e, st);
+
+      // Update message with failure
+      final failedMessage = message.copyWith(
+        status: MessageStatus.failed,
+        expiresAt: expiresAtSeconds ?? message.expiresAt,
+      );
+      await updateMessage(failedMessage);
+      state = state.copyWith(error: appError.message);
+
+      // Re-throw so queue service knows to retry
+      rethrow;
+    }
+  }
+
+  /// Receive a decrypted message from the session manager.
+  Future<ChatMessage?> receiveDecryptedMessage(
+    String senderPubkeyHex,
+    String content, {
+    String? eventId,
+    int? createdAt,
+  }) async {
+    try {
+      if (eventId != null && await _messageDatasource.messageExists(eventId)) {
+        return null;
+      }
+
+      final rumor = NostrRumor.tryParse(content);
+
+      // Legacy fallback: treat decrypted plaintext as a chat message.
+      if (rumor == null) {
+        final existingSession = await _sessionDatasource.getSessionByRecipient(
+          senderPubkeyHex,
+        );
+        final sessionId = existingSession?.id ?? senderPubkeyHex;
+
+        if (existingSession == null) {
+          final session = ChatSession(
+            id: sessionId,
+            recipientPubkeyHex: senderPubkeyHex,
+            createdAt: DateTime.now(),
+            isInitiator: false,
+          );
+          await _sessionDatasource.saveSession(session);
+        }
+
+        final timestamp = createdAt != null
+            ? DateTime.fromMillisecondsSinceEpoch(createdAt * 1000)
+            : DateTime.now();
+
+        final reactionPayload = parseReactionPayload(content);
+        if (reactionPayload != null) {
+          await handleIncomingReaction(
+            sessionId,
+            reactionPayload['messageId'] as String,
+            reactionPayload['emoji'] as String,
+            senderPubkeyHex,
+            timestamp: timestamp,
+          );
+          return null;
+        }
+
+        final resolvedEventId =
+            eventId ?? DateTime.now().microsecondsSinceEpoch.toString();
+        final message = ChatMessage.incoming(
+          sessionId: sessionId,
+          text: content,
+          eventId: resolvedEventId,
+          rumorId: resolvedEventId,
+          timestamp: timestamp,
+        );
+
+        await addReceivedMessage(message);
+        return message;
+      }
+
+      final ownerPubkeyHex = _sessionManagerService.ownerPubkeyHex;
+      final peerPubkeyHex = await _resolveConversationPeerPubkey(
+        senderPubkeyHex: senderPubkeyHex,
+        rumor: rumor,
+        ownerPubkeyHex: ownerPubkeyHex,
+      );
+
+      if (peerPubkeyHex == null || peerPubkeyHex.isEmpty) {
+        return null;
+      }
+
+      // Find or create session by recipient pubkey (peer pubkey).
+      final existingSession = await _sessionDatasource.getSessionByRecipient(
+        peerPubkeyHex,
+      );
+      final sessionId = existingSession?.id ?? peerPubkeyHex;
+
+      if (existingSession == null) {
+        final session = ChatSession(
+          id: sessionId,
+          recipientPubkeyHex: peerPubkeyHex,
+          createdAt: DateTime.now(),
+          isInitiator: false,
+        );
+        await _sessionDatasource.saveSession(session);
+      }
+
+      // Receipt (kind 15): update outgoing message status by stable rumor ids.
+      if (rumor.kind == _kReceiptKind) {
+        final receiptType = rumor.content;
+        final messageIds = getTagValues(rumor.tags, 'e');
+        if (messageIds.isEmpty) return null;
+
+        final nextStatus = switch (receiptType) {
+          'delivered' => MessageStatus.delivered,
+          'seen' => MessageStatus.seen,
+          _ => null,
+        };
+        if (nextStatus == null) return null;
+
+        for (final id in messageIds) {
+          await _applyOutgoingStatusByRumorId(id, nextStatus);
+        }
+        return null;
+      }
+
+      // Typing indicator (kind 25)
+      if (rumor.kind == _kTypingKind) {
+        if (ownerPubkeyHex != null && rumor.pubkey == ownerPubkeyHex) {
+          // Ignore self typing events (multi-device sync).
+          return null;
+        }
+        final normalizedContent = rumor.content.trim().toLowerCase();
+        final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        final expiresAtSeconds = getExpirationTimestampSeconds(rumor.tags);
+        final isStopEvent =
+            (expiresAtSeconds != null && expiresAtSeconds <= nowSeconds) ||
+            normalizedContent == 'false' ||
+            normalizedContent == 'stop' ||
+            normalizedContent == 'typing:false';
+
+        if (isStopEvent) {
+          _clearRemoteTyping(
+            sessionId,
+            recipientPubkeyHex: peerPubkeyHex,
+            force: true,
+          );
+        } else {
+          _setRemoteTyping(
+            sessionId,
+            recipientPubkeyHex: peerPubkeyHex,
+            typingTimestampMs: rumorTimestamp(rumor).millisecondsSinceEpoch,
+          );
+        }
+        return null;
+      }
+
+      // Reaction (kind 7) or legacy reaction payload inside kind 14.
+      if (rumor.kind == _kReactionKind) {
+        final messageId = getFirstTagValue(rumor.tags, 'e');
+        if (messageId == null || messageId.isEmpty) return null;
+        await handleIncomingReaction(
+          sessionId,
+          messageId,
+          rumor.content,
+          rumor.pubkey,
+          timestamp: rumorTimestamp(rumor),
+        );
+        return null;
+      }
+
+      if (rumor.kind != _kChatMessageKind) {
+        return null;
+      }
+
+      final isMine = ownerPubkeyHex != null && rumor.pubkey == ownerPubkeyHex;
+
+      // De-dup using stable inner id.
+      if (await _messageDatasource.messageExists(rumor.id)) {
+        // When we receive a relay echo / self-copy of our own outgoing message,
+        // use it to backfill the outer event id so reactions can reference it.
+        if (isMine && eventId != null && eventId.isNotEmpty) {
+          _backfillOutgoingEventId(rumor.id, eventId);
+        }
+        return null;
+      }
+
+      // Some clients send reactions as JSON content in kind 14; keep compatibility.
+      final reactionPayload = parseReactionPayload(rumor.content);
+      if (reactionPayload != null) {
+        await handleIncomingReaction(
+          sessionId,
+          reactionPayload['messageId'] as String,
+          reactionPayload['emoji'] as String,
+          rumor.pubkey,
+          timestamp: rumorTimestamp(rumor),
+        );
+        return null;
+      }
+
+      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final expiresAtSeconds = getExpirationTimestampSeconds(rumor.tags);
+      if (expiresAtSeconds != null && expiresAtSeconds <= nowSeconds) {
+        // Ignore already-expired messages; they may still be delivered by relays,
+        // but clients should not surface them.
+        return null;
+      }
+
+      final message = ChatMessage(
+        id: rumor.id,
+        sessionId: sessionId,
+        text: rumor.content,
+        timestamp: rumorTimestamp(rumor),
+        expiresAt: expiresAtSeconds,
+        direction: isMine
+            ? MessageDirection.outgoing
+            : MessageDirection.incoming,
+        status: isMine ? MessageStatus.sent : MessageStatus.delivered,
+        eventId: eventId,
+        rumorId: rumor.id,
+        replyToId: _resolveReplyToId(rumor.tags),
+      );
+
+      if (!isMine) {
+        _clearRemoteTyping(
+          sessionId,
+          recipientPubkeyHex: peerPubkeyHex,
+          messageTimestampMs: rumorTimestamp(rumor).millisecondsSinceEpoch,
+        );
+      }
+
+      await addReceivedMessage(message);
+
+      // Auto-send delivery receipt for incoming messages.
+      if (!isMine && _deliveryReceiptsEnabled) {
+        await _sessionManagerService.sendReceipt(
+          recipientPubkeyHex: peerPubkeyHex,
+          receiptType: 'delivered',
+          messageIds: [rumor.id],
+        );
+      }
+
+      if (!isMine) {
+        await _notifyIncomingMessage(message);
+      }
+
+      return message;
+    } catch (e, st) {
+      final appError = AppError.from(e, st);
+      state = state.copyWith(error: appError.message);
+      return null;
+    }
+  }
+
+  Future<String?> _resolveConversationPeerPubkey({
+    required String senderPubkeyHex,
+    required NostrRumor rumor,
+    required String? ownerPubkeyHex,
+  }) async {
+    final owner = ownerPubkeyHex?.toLowerCase().trim();
+    final sender = senderPubkeyHex.toLowerCase().trim();
+
+    final rumorPeer = owner != null
+        ? resolveRumorPeerPubkey(ownerPubkeyHex: owner, rumor: rumor)
+        : sender;
+    final rumorPeerNormalized = rumorPeer?.toLowerCase().trim();
+
+    final candidates = <String>[];
+    if (rumorPeerNormalized != null && rumorPeerNormalized.isNotEmpty) {
+      candidates.add(rumorPeerNormalized);
+    }
+    if (sender.isNotEmpty && !candidates.contains(sender)) {
+      candidates.add(sender);
+    }
+
+    for (final candidate in candidates) {
+      if (owner != null && candidate == owner) continue;
+      final existing = await _sessionDatasource.getSessionByRecipient(
+        candidate,
+      );
+      if (existing != null) return candidate;
+    }
+
+    for (final candidate in candidates) {
+      if (owner != null && candidate == owner) continue;
+      if (candidate.isNotEmpty) return candidate;
+    }
+
+    return null;
+  }
+
+  static String? _resolveReplyToId(List<List<String>> tags) {
+    for (final t in tags) {
+      if (t.length < 2) continue;
+      if (t[0] != 'e') continue;
+      if (t.length >= 4 && t[3] == 'reply') return t[1];
+    }
+    return getFirstTagValue(tags, 'e');
+  }
+
+  Future<void> markSessionSeen(String sessionId) async {
+    if (!_inboundActivityPolicy.canMarkSeen()) return;
+
+    final session = await _sessionDatasource.getSession(sessionId);
+    if (session == null) return;
+
+    final inState = state.messages[sessionId];
+    final messages = (inState == null || inState.isEmpty)
+        ? await _messageDatasource.getMessagesForSession(sessionId, limit: 200)
+        : inState;
+
+    final toMark = messages
+        .where((m) => m.isIncoming && m.status != MessageStatus.seen)
+        .toList();
+    if (toMark.isEmpty) return;
+
+    final rumorIds = toMark
+        .map((m) => m.rumorId ?? m.id)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    if (rumorIds.isNotEmpty && _readReceiptsEnabled) {
+      await _sessionManagerService.sendReceipt(
+        recipientPubkeyHex: session.recipientPubkeyHex,
+        receiptType: 'seen',
+        messageIds: rumorIds.toList(),
+      );
+    }
+
+    for (final id in rumorIds) {
+      await _messageDatasource.updateIncomingStatusByRumorId(
+        id,
+        MessageStatus.seen,
+      );
+    }
+
+    // Update in-memory state (only for messages currently loaded into state).
+    final current = state.messages[sessionId];
+    if (current == null) return;
+
+    final updated = current.map((m) {
+      if (!m.isIncoming) return m;
+      final id = m.rumorId ?? m.id;
+      if (!rumorIds.contains(id)) return m;
+      if (!shouldAdvanceStatus(m.status, MessageStatus.seen)) return m;
+      return m.copyWith(status: MessageStatus.seen);
+    }).toList();
+
+    state = state.copyWith(messages: {...state.messages, sessionId: updated});
+  }
+
+  Future<void> notifyTyping(String sessionId) async {
+    if (!_typingIndicatorsEnabled) return;
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final last = _lastTypingSentAtMs[sessionId] ?? 0;
+    if (nowMs - last < _kTypingThrottle.inMilliseconds) return;
+
+    _lastTypingSentAtMs[sessionId] = nowMs;
+
+    final session = await _sessionDatasource.getSession(sessionId);
+    if (session == null) return;
+
+    await _sessionManagerService.sendTyping(
+      recipientPubkeyHex: session.recipientPubkeyHex,
+      expiresAtSeconds: null,
+    );
+  }
+
+  Future<void> notifyTypingStopped(String sessionId) async {
+    _lastTypingSentAtMs.remove(sessionId);
+    if (!_typingIndicatorsEnabled) return;
+
+    final session = await _sessionDatasource.getSession(sessionId);
+    if (session == null) return;
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    await _sessionManagerService.sendTyping(
+      recipientPubkeyHex: session.recipientPubkeyHex,
+      expiresAtSeconds: nowSeconds,
+    );
+  }
+
+  Set<String> _typingKeysForSession(
+    String sessionId, {
+    String? recipientPubkeyHex,
+  }) {
+    final keys = <String>{sessionId};
+    final normalizedRecipient = recipientPubkeyHex?.toLowerCase().trim();
+    if (normalizedRecipient != null && normalizedRecipient.isNotEmpty) {
+      keys.add(normalizedRecipient);
+    }
+    return keys;
+  }
+
+  void _setRemoteTyping(
+    String sessionId, {
+    String? recipientPubkeyHex,
+    int? typingTimestampMs,
+  }) {
+    final keys = _typingKeysForSession(
+      sessionId,
+      recipientPubkeyHex: recipientPubkeyHex,
+    );
+    final resolvedTypingTimestampMs =
+        typingTimestampMs ?? DateTime.now().millisecondsSinceEpoch;
+    for (final key in keys) {
+      _typingExpiryTimers[key]?.cancel();
+    }
+
+    final nextStates = {...state.typingStates};
+    for (final key in keys) {
+      nextStates[key] = true;
+      _lastRemoteTypingAtMs[key] = resolvedTypingTimestampMs;
+    }
+    state = state.copyWith(typingStates: nextStates);
+
+    final timer = Timer(_kTypingExpiry, () {
+      final next = {...state.typingStates};
+      for (final key in keys) {
+        _typingExpiryTimers.remove(key);
+        _lastRemoteTypingAtMs.remove(key);
+        next.remove(key);
+      }
+      state = state.copyWith(typingStates: next);
+    });
+    for (final key in keys) {
+      _typingExpiryTimers[key] = timer;
+    }
+  }
+
+  void _clearRemoteTyping(
+    String sessionId, {
+    String? recipientPubkeyHex,
+    int? messageTimestampMs,
+    bool force = false,
+  }) {
+    final keys = _typingKeysForSession(
+      sessionId,
+      recipientPubkeyHex: recipientPubkeyHex,
+    );
+
+    final next = {...state.typingStates};
+    var changed = false;
+    for (final key in keys) {
+      final lastTypingTimestampMs = _lastRemoteTypingAtMs[key];
+      if (!force &&
+          messageTimestampMs != null &&
+          lastTypingTimestampMs != null &&
+          messageTimestampMs < lastTypingTimestampMs) {
+        // Relay replays can deliver older messages after a newer typing rumor.
+        // Keep typing visible until a newer/equal message (or explicit stop) arrives.
+        continue;
+      }
+      _typingExpiryTimers[key]?.cancel();
+      _typingExpiryTimers.remove(key);
+      _lastRemoteTypingAtMs.remove(key);
+      changed = next.remove(key) != null || changed;
+    }
+    if (!changed) return;
+    state = state.copyWith(typingStates: next);
+  }
+
+  Future<void> _applyOutgoingStatusByRumorId(
+    String rumorId,
+    MessageStatus nextStatus,
+  ) async {
+    await _messageDatasource.updateOutgoingStatusByRumorId(rumorId, nextStatus);
+
+    var changed = false;
+    final updatedBySession = <String, List<ChatMessage>>{};
+
+    for (final entry in state.messages.entries) {
+      final sessionId = entry.key;
+      final updated = entry.value.map((m) {
+        if (!m.isOutgoing) return m;
+        if (m.rumorId != rumorId && m.id != rumorId) return m;
+        if (!shouldAdvanceStatus(m.status, nextStatus)) return m;
+        changed = true;
+        return m.copyWith(status: nextStatus);
+      }).toList();
+      updatedBySession[sessionId] = updated;
+    }
+
+    if (!changed) return;
+    state = state.copyWith(messages: updatedBySession);
+  }
+
+  void _backfillOutgoingEventId(String rumorId, String eventId) {
+    // Update UI state immediately; persist in background.
+    var changed = false;
+    final updatedBySession = <String, List<ChatMessage>>{};
+
+    for (final entry in state.messages.entries) {
+      final sessionId = entry.key;
+      final updated = entry.value.map((m) {
+        if (!m.isOutgoing) return m;
+        if (m.rumorId != rumorId && m.id != rumorId) return m;
+
+        final nextEventId = (m.eventId == null || m.eventId!.isEmpty)
+            ? eventId
+            : m.eventId;
+        final nextStatus = shouldAdvanceStatus(m.status, MessageStatus.sent)
+            ? MessageStatus.sent
+            : m.status;
+
+        if (nextEventId == m.eventId && nextStatus == m.status) return m;
+        changed = true;
+        return m.copyWith(eventId: nextEventId, status: nextStatus);
+      }).toList();
+      updatedBySession[sessionId] = updated;
+    }
+
+    if (changed) {
+      state = state.copyWith(messages: updatedBySession);
+    }
+
+    unawaited(() async {
+      try {
+        await _messageDatasource.updateOutgoingEventIdByRumorId(
+          rumorId,
+          eventId,
+        );
+      } catch (_) {}
+    }());
+  }
+
+  Future<String> _notificationTitleForSession(String sessionId) async {
+    final byId = await _sessionDatasource.getSession(sessionId);
+    if (byId != null) return byId.displayName;
+    final byRecipient = await _sessionDatasource.getSessionByRecipient(
+      sessionId,
+    );
+    if (byRecipient != null) return byRecipient.displayName;
+    return formatPubkeyForDisplay(sessionId);
+  }
+
+  Future<void> _notifyIncomingMessage(ChatMessage message) async {
+    if (!_inboundActivityPolicy.shouldNotifyDesktopForTimestamp(
+      message.timestamp,
+    )) {
+      return;
+    }
+
+    try {
+      final title = await _notificationTitleForSession(message.sessionId);
+      await _desktopNotificationService.showIncomingMessage(
+        enabled: _desktopNotificationsEnabled,
+        conversationTitle: title,
+        body: buildAttachmentAwarePreview(message.text),
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _notifyIncomingReaction({
+    required String sessionId,
+    required ChatMessage targetMessage,
+    required String emoji,
+  }) async {
+    try {
+      final title = await _notificationTitleForSession(sessionId);
+      await _desktopNotificationService.showIncomingReaction(
+        enabled: _desktopNotificationsEnabled,
+        conversationTitle: title,
+        emoji: emoji,
+        targetPreview: buildAttachmentAwarePreview(targetMessage.text),
+      );
+    } catch (_) {}
+  }
+
+  /// Update a message (e.g., after sending succeeds).
+  Future<void> updateMessage(ChatMessage message) async {
+    final sessionId = message.sessionId;
+    final currentMessages = state.messages[sessionId] ?? [];
+
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        sessionId: currentMessages
+            .map((m) => m.id == message.id ? message : m)
+            .toList(),
+      },
+      sendingStates: {...state.sendingStates}..remove(message.id),
+    );
+
+    // Persist in background so UI doesn't stall on a locked DB.
+    unawaited(() async {
+      try {
+        await _messageDatasource.saveMessage(message);
+      } catch (_) {}
+    }());
+  }
+
+  /// Add a received message.
+  Future<void> addReceivedMessage(ChatMessage message) async {
+    // Check if message already exists
+    final dedupeKey = message.rumorId ?? message.eventId ?? message.id;
+    if (await _messageDatasource.messageExists(dedupeKey)) return;
+
+    await _messageDatasource.saveMessage(message);
+
+    final sessionId = message.sessionId;
+    final currentMessages = state.messages[sessionId] ?? [];
+
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        sessionId: [...currentMessages, message],
+      },
+    );
+  }
+
+  /// Send a reaction to a message.
+  /// Note: messageId here is the internal message ID, we need to use eventId for the reaction payload
+  Future<void> sendReaction(
+    String sessionId,
+    String messageId,
+    String emoji,
+    String myPubkey,
+  ) async {
+    try {
+      // Find the message to get its eventId (Nostr event ID)
+      final messages = state.messages[sessionId] ?? [];
+      final message = messages.firstWhere(
+        (m) => m.id == messageId,
+        orElse: () => throw const AppError(
+          type: AppErrorType.unknown,
+          message: 'Message not found',
+          isRetryable: false,
+        ),
+      );
+
+      // Use the outer Nostr event id when available. Fall back to the stable inner id
+      // (rumor id) rather than the local UI id.
+      final reactionMessageId =
+          (message.eventId != null && message.eventId!.isNotEmpty)
+          ? message.eventId!
+          : (message.rumorId != null && message.rumorId!.isNotEmpty)
+          ? message.rumorId!
+          : null;
+      if (reactionMessageId == null) {
+        throw const AppError(
+          type: AppErrorType.unknown,
+          message:
+              'Message not yet ready for reactions. Try again in a moment.',
+          isRetryable: true,
+        );
+      }
+
+      final session = await _sessionDatasource.getSession(sessionId);
+      if (session == null) {
+        throw const AppError(
+          type: AppErrorType.sessionExpired,
+          message: 'Session not found. Please start a new conversation.',
+          isRetryable: false,
+        );
+      }
+
+      await _sessionManagerService.sendReaction(
+        recipientPubkeyHex: session.recipientPubkeyHex,
+        messageId: reactionMessageId,
+        emoji: emoji,
+      );
+
+      // Update reaction optimistically (use internal ID for state management)
+      await _applyReaction(sessionId, messageId, emoji, myPubkey);
+    } catch (e, st) {
+      final appError = e is AppError ? e : AppError.from(e, st);
+      state = state.copyWith(error: appError.message);
+    }
+  }
+
+  /// Send a 1:1 "chat-settings" rumor (kind 10448) to coordinate disappearing messages.
+  ///
+  /// This does not update local state; callers should persist `messageTtlSeconds`
+  /// on the session separately (so sending can apply the setting immediately).
+  Future<void> sendChatSettingsSignal(
+    String sessionId,
+    int? messageTtlSeconds,
+  ) async {
+    try {
+      final session = await _sessionDatasource.getSession(sessionId);
+      if (session == null) {
+        throw const AppError(
+          type: AppErrorType.sessionExpired,
+          message: 'Session not found. Please start a new conversation.',
+          isRetryable: false,
+        );
+      }
+
+      final normalized = (messageTtlSeconds != null && messageTtlSeconds > 0)
+          ? messageTtlSeconds
+          : null;
+      final content = buildChatSettingsContent(messageTtlSeconds: normalized);
+
+      // Required for self-sync/outgoing copies so we can resolve the peer from the rumor.
+      final tagsJson = jsonEncode([
+        ['p', session.recipientPubkeyHex],
+      ]);
+
+      await _sessionManagerService.sendEventWithInnerId(
+        recipientPubkeyHex: session.recipientPubkeyHex,
+        kind: kChatSettingsKind,
+        content: content,
+        tagsJson: tagsJson,
+        createdAtSeconds: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      );
+    } catch (e, st) {
+      final appError = e is AppError ? e : AppError.from(e, st);
+      state = state.copyWith(error: appError.message);
+    }
+  }
+
+  /// Handle incoming reaction.
+  Future<void> handleIncomingReaction(
+    String sessionId,
+    String messageId,
+    String emoji,
+    String fromPubkey, {
+    DateTime? timestamp,
+  }) async {
+    await _applyReaction(
+      sessionId,
+      messageId,
+      emoji,
+      fromPubkey,
+      notifyIncoming: true,
+      reactionTimestamp: timestamp,
+    );
+  }
+
+  /// Apply a reaction to a message (used for both sent and received reactions).
+  /// messageId can be either internal id or eventId (Nostr event ID)
+  Future<void> _applyReaction(
+    String sessionId,
+    String messageId,
+    String emoji,
+    String pubkey, {
+    bool notifyIncoming = false,
+    DateTime? reactionTimestamp,
+  }) async {
+    final currentMessages = state.messages[sessionId] ?? [];
+    // Match by internal id first, then by eventId
+    var messageIndex = currentMessages.indexWhere((m) => m.id == messageId);
+    if (messageIndex == -1) {
+      messageIndex = currentMessages.indexWhere((m) => m.eventId == messageId);
+    }
+    if (messageIndex == -1) {
+      messageIndex = currentMessages.indexWhere((m) => m.rumorId == messageId);
+    }
+    if (messageIndex == -1) return;
+
+    final message = currentMessages[messageIndex];
+
+    // Create updated reactions - remove user from any existing reactions first
+    final reactions = <String, List<String>>{};
+    for (final entry in message.reactions.entries) {
+      final filtered = entry.value.where((u) => u != pubkey).toList();
+      if (filtered.isNotEmpty) {
+        reactions[entry.key] = filtered;
+      }
+    }
+
+    // Add user to new reaction
+    reactions[emoji] = [...(reactions[emoji] ?? []), pubkey];
+
+    // Update message
+    final updatedMessage = message.copyWith(reactions: reactions);
+    final updatedMessages = [...currentMessages];
+    updatedMessages[messageIndex] = updatedMessage;
+
+    state = state.copyWith(
+      messages: {...state.messages, sessionId: updatedMessages},
+    );
+
+    final ownerPubkey = _sessionManagerService.ownerPubkeyHex;
+    final shouldNotify =
+        notifyIncoming &&
+        (ownerPubkey == null || ownerPubkey.toLowerCase() != pubkey) &&
+        reactionTimestamp != null &&
+        _inboundActivityPolicy.shouldNotifyDesktopForTimestamp(
+          reactionTimestamp,
+        );
+    if (shouldNotify) {
+      await _notifyIncomingReaction(
+        sessionId: sessionId,
+        targetMessage: updatedMessage,
+        emoji: emoji,
+      );
+    }
+
+    // Save to database in background (DB can be locked; don't crash/log-spam).
+    unawaited(() async {
+      try {
+        await _messageDatasource.saveMessage(updatedMessage);
+      } catch (_) {}
+    }());
+  }
+
+  /// Check if content is a reaction payload and return parsed data.
+  static Map<String, dynamic>? parseReactionPayload(String content) {
+    try {
+      final parsed = jsonDecode(content) as Map<String, dynamic>;
+      if (parsed['type'] == 'reaction' &&
+          parsed['messageId'] != null &&
+          parsed['emoji'] != null) {
+        return parsed;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Update message status.
+  Future<void> updateMessageStatus(
+    String messageId,
+    MessageStatus status,
+  ) async {
+    await _messageDatasource.updateMessageStatus(messageId, status);
+
+    state = state.copyWith(
+      messages: state.messages.map((sessionId, messages) {
+        return MapEntry(
+          sessionId,
+          messages.map((m) {
+            if (m.id == messageId) {
+              return m.copyWith(status: status);
+            }
+            return m;
+          }).toList(),
+        );
+      }),
+    );
+  }
+
+  /// Clear error state.
+  void clearError() {
+    state = state.copyWith(error: null);
+  }
+}

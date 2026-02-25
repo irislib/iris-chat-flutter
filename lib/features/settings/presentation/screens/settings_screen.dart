@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
+import '../../../../config/providers/desktop_notification_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
 import '../../../../config/providers/messaging_preferences_provider.dart';
 import '../../../../config/providers/startup_launch_provider.dart';
@@ -20,6 +21,9 @@ class SettingsScreen extends ConsumerWidget {
     final authState = ref.watch(authStateProvider);
     final startupLaunchState = ref.watch(startupLaunchProvider);
     final messagingPreferences = ref.watch(messagingPreferencesProvider);
+    final desktopNotificationsSupported = ref.watch(
+      desktopNotificationsSupportedProvider,
+    );
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -114,6 +118,20 @@ class SettingsScreen extends ConsumerWidget {
                       .read(messagingPreferencesProvider.notifier)
                       .setReadReceiptsEnabled(value),
           ),
+          if (desktopNotificationsSupported)
+            SwitchListTile(
+              secondary: const Icon(Icons.notifications_active),
+              title: const Text('Desktop Notifications'),
+              subtitle: const Text(
+                'Show incoming message and reaction alerts when app is unfocused',
+              ),
+              value: messagingPreferences.desktopNotificationsEnabled,
+              onChanged: messagingPreferences.isLoading
+                  ? null
+                  : (value) => ref
+                        .read(messagingPreferencesProvider.notifier)
+                        .setDesktopNotificationsEnabled(value),
+            ),
           if (messagingPreferences.error != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
