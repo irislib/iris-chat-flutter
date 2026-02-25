@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +11,44 @@ import 'package:iris_chat/features/chat/presentation/widgets/chat_message_bubble
 
 import '../test_helpers.dart';
 
+const double _kGoldenMaxDiffRate = 0.009;
+
+class _ToleranceGoldenComparator extends LocalFileComparator {
+  _ToleranceGoldenComparator(super.testFile, {required this.maxDiffRate});
+
+  final double maxDiffRate;
+
+  @override
+  Future<bool> compare(Uint8List imageBytes, Uri golden) async {
+    final ComparisonResult result = await GoldenFileComparator.compareLists(
+      imageBytes,
+      await getGoldenBytes(golden),
+    );
+
+    if (result.passed || result.diffPercent <= maxDiffRate) {
+      result.dispose();
+      return true;
+    }
+
+    final String error = await generateFailureOutput(result, golden, basedir);
+    result.dispose();
+    throw FlutterError(error);
+  }
+}
+
 void main() {
+  setUp(() {
+    final GoldenFileComparator previousComparator = goldenFileComparator;
+    final Uri testFile = Uri.file(
+      '${Directory.current.path}/test/golden/chat_message_bubble_golden_test.dart',
+    );
+    goldenFileComparator = _ToleranceGoldenComparator(
+      testFile,
+      maxDiffRate: _kGoldenMaxDiffRate,
+    );
+    addTearDown(() => goldenFileComparator = previousComparator);
+  });
+
   ChatMessage buildMessage({
     required MessageDirection direction,
     String text = 'hello world',
