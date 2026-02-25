@@ -231,13 +231,26 @@ jobs:
 
       - name: Verify macOS native FFI is enabled
         run: |
-          APP_BINARY="$(find build/macos/Build/Products/Release -path '*.app/Contents/MacOS/Runner' -print -quit)"
-          if [ -z "${APP_BINARY}" ]; then
-            echo "macOS app binary not found in build output"
+          PBXPROJ="macos/Runner.xcodeproj/project.pbxproj"
+          if [ ! -f "${PBXPROJ}" ]; then
+            echo "Missing ${PBXPROJ}"
             exit 1
           fi
-          if strings "${APP_BINARY}" | grep -q "macOS native FFI is disabled in this build."; then
-            echo "Release binary contains NativeUnavailable fallback for macOS FFI."
+
+          if ! grep -q 'SWIFT_ACTIVE_COMPILATION_CONDITIONS = NATIVE_RUST_FFI_ENABLED;' "${PBXPROJ}"; then
+            echo "Release/Profile macOS build is missing NATIVE_RUST_FFI_ENABLED."
+            exit 1
+          fi
+          if ! grep -q 'SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG NATIVE_RUST_FFI_ENABLED";' "${PBXPROJ}"; then
+            echo "Debug macOS build is missing NATIVE_RUST_FFI_ENABLED."
+            exit 1
+          fi
+          if ! grep -q 'libhashtree_ffi.a in Frameworks' "${PBXPROJ}"; then
+            echo "macOS project is not linking libhashtree_ffi.a."
+            exit 1
+          fi
+          if ! grep -q 'libndr_ffi.a in Frameworks' "${PBXPROJ}"; then
+            echo "macOS project is not linking libndr_ffi.a."
             exit 1
           fi
 
