@@ -3,9 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:iris_chat/features/chat/presentation/widgets/typing_dots.dart';
 
+import '../test_helpers.dart';
+
 void main() {
   Widget wrap(Widget child) {
     return MaterialApp(
+      theme: createTestTheme(),
       home: Scaffold(
         body: Center(
           child: RepaintBoundary(

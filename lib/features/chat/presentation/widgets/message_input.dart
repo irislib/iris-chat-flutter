@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -68,27 +70,39 @@ class _MessageInputState extends State<MessageInput> {
   @override
   void initState() {
     super.initState();
-    if (widget.focusNode != null) {
-      // Preserve "Enter sends" behavior even when a screen provides its own FocusNode.
-      widget.focusNode!.onKeyEvent = _handleKeyEvent;
-      _ownedFocusNode = null;
-    } else {
-      _ownedFocusNode = FocusNode(onKeyEvent: _handleKeyEvent);
-    }
+    _ownedFocusNode = widget.focusNode == null ? FocusNode() : null;
+    _focusNode.addListener(_handleFocusChanged);
   }
 
   @override
   void didUpdateWidget(covariant MessageInput oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.focusNode != widget.focusNode && widget.focusNode != null) {
-      widget.focusNode!.onKeyEvent = _handleKeyEvent;
+    if (oldWidget.focusNode != widget.focusNode) {
+      (oldWidget.focusNode ?? _ownedFocusNode)?.removeListener(
+        _handleFocusChanged,
+      );
+    }
+    if (oldWidget.focusNode == null && widget.focusNode != null) {
+      _ownedFocusNode?.dispose();
+      _ownedFocusNode = null;
+    } else if (oldWidget.focusNode != null && widget.focusNode == null) {
+      _ownedFocusNode = FocusNode();
+    }
+    if (oldWidget.focusNode != widget.focusNode) {
+      _focusNode.addListener(_handleFocusChanged);
     }
   }
 
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChanged);
     _ownedFocusNode?.dispose();
     super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (!_focusNode.hasFocus) return;
+    unawaited(HardwareKeyboard.instance.syncKeyboardState());
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
@@ -232,26 +246,31 @@ class _MessageInputState extends State<MessageInput> {
                 tooltip: 'Attach file',
               ),
               Expanded(
-                child: TextField(
-                  focusNode: _focusNode,
-                  controller: widget.controller,
-                  autofocus: widget.autofocus,
-                  decoration: InputDecoration(
-                    hintText: 'Message',
-                    border: const OutlineInputBorder(
-                      borderRadius: _inputBorderRadius,
-                      borderSide: BorderSide.none,
+                child: Focus(
+                  canRequestFocus: false,
+                  skipTraversal: true,
+                  onKeyEvent: _handleKeyEvent,
+                  child: TextField(
+                    focusNode: _focusNode,
+                    controller: widget.controller,
+                    autofocus: widget.autofocus,
+                    decoration: InputDecoration(
+                      hintText: 'Message',
+                      border: const OutlineInputBorder(
+                        borderRadius: _inputBorderRadius,
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: theme.colorScheme.surfaceContainerHighest,
+                      contentPadding: _contentPadding,
                     ),
-                    filled: true,
-                    fillColor: theme.colorScheme.surfaceContainerHighest,
-                    contentPadding: _contentPadding,
+                    textCapitalization: TextCapitalization.sentences,
+                    minLines: 1,
+                    maxLines: 5,
+                    onChanged: widget.onChanged,
+                    // For platforms/IME where "submit" exists.
+                    onSubmitted: (_) => widget.onSend(),
                   ),
-                  textCapitalization: TextCapitalization.sentences,
-                  minLines: 1,
-                  maxLines: 5,
-                  onChanged: widget.onChanged,
-                  // For platforms/IME where "submit" exists.
-                  onSubmitted: (_) => widget.onSend(),
                 ),
               ),
               _spacing,

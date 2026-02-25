@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:iris_chat/features/chat/presentation/widgets/message_input.dart';
 
+import '../test_helpers.dart';
+
 void main() {
   testWidgets('MessageInput: Enter sends, Shift+Enter inserts newline', (
     tester,
@@ -13,6 +15,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: createTestTheme(),
         home: Material(
           child: MessageInput(
             controller: controller,
@@ -57,6 +60,91 @@ void main() {
     expect(controller.text, contains('\n'));
   });
 
+  testWidgets('MessageInput: external FocusNode still supports Enter send', (
+    tester,
+  ) async {
+    var sendCount = 0;
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+
+    addTearDown(focusNode.dispose);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: createTestTheme(),
+        home: Material(
+          child: MessageInput(
+            controller: controller,
+            onSend: () => sendCount++,
+            focusNode: focusNode,
+          ),
+        ),
+      ),
+    );
+
+    final field = find.byType(TextField);
+    expect(field, findsOneWidget);
+
+    await tester.tap(field);
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+
+    await tester.enterText(field, 'hi');
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(sendCount, 1);
+    expect(controller.text, 'hi');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'MessageInput: external FocusNode supports Shift+Enter newline without send',
+    (tester) async {
+      var sendCount = 0;
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+
+      addTearDown(focusNode.dispose);
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: createTestTheme(),
+          home: Material(
+            child: MessageInput(
+              controller: controller,
+              onSend: () => sendCount++,
+              focusNode: focusNode,
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 'hi');
+      controller.selection = TextSelection.collapsed(
+        offset: controller.text.length,
+      );
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+
+      expect(sendCount, 0);
+      expect(controller.text, 'hi\n');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('MessageInput shows attachment controls when enabled', (
     tester,
   ) async {
@@ -66,6 +154,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: createTestTheme(),
         home: Material(
           child: MessageInput(
             controller: controller,
@@ -104,6 +193,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: createTestTheme(),
         home: Material(
           child: MessageInput(
             controller: controller,
@@ -197,6 +287,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          theme: createTestTheme(),
           home: Material(
             child: MessageInput(
               controller: controller,

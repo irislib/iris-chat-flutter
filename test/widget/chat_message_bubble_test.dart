@@ -10,6 +10,8 @@ import 'package:iris_chat/features/chat/domain/models/message.dart';
 import 'package:iris_chat/features/chat/presentation/widgets/chat_message_bubble.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../test_helpers.dart';
+
 class MockHashtreeAttachmentService extends Mock
     implements HashtreeAttachmentService {}
 
@@ -47,6 +49,7 @@ void main() {
     return ProviderScope(
       overrides: overrides,
       child: MaterialApp(
+        theme: createTestTheme(),
         home: Scaffold(
           body: SizedBox(
             width: width,

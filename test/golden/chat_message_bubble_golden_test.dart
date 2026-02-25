@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_chat/features/chat/domain/models/message.dart';
 import 'package:iris_chat/features/chat/presentation/widgets/chat_message_bubble.dart';
 
+import '../test_helpers.dart';
+
 void main() {
   ChatMessage buildMessage({
     required MessageDirection direction,
@@ -24,6 +26,7 @@ void main() {
   Widget wrap(Widget child) {
     return ProviderScope(
       child: MaterialApp(
+        theme: createTestTheme(),
         home: Scaffold(
           body: Center(
             child: RepaintBoundary(

@@ -3,6 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 
+ThemeData createTestTheme() {
+  // Avoid InkSparkle shader compilation in widget tests.
+  return ThemeData(useMaterial3: true, splashFactory: InkRipple.splashFactory);
+}
+
 /// Creates a test app wrapper with necessary providers and configuration
 Widget createTestApp(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
@@ -11,7 +16,7 @@ Widget createTestApp(Widget child, {List<Override> overrides = const []}) {
       designSize: const Size(390, 844),
       minTextAdapt: true,
       builder: (context, _) {
-        return MaterialApp(home: child);
+        return MaterialApp(theme: createTestTheme(), home: child);
       },
     ),
   );
@@ -29,7 +34,10 @@ Widget createTestRouterApp(
       designSize: const Size(390, 844),
       minTextAdapt: true,
       builder: (context, _) {
-        return MaterialApp.router(routerConfig: router);
+        return MaterialApp.router(
+          theme: createTestTheme(),
+          routerConfig: router,
+        );
       },
     ),
   );

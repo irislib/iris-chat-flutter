@@ -19,13 +19,19 @@ import 'package:iris_chat/features/invite/data/datasources/invite_local_datasour
 import 'package:iris_chat/shared/utils/animal_names.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../test_helpers.dart';
+
 class MockSessionLocalDatasource extends Mock
     implements SessionLocalDatasource {}
 
 class MockInviteLocalDatasource extends Mock implements InviteLocalDatasource {}
+
 class MockSessionManagerService extends Mock implements SessionManagerService {}
+
 class MockProfileService extends Mock implements ProfileService {}
+
 class MockGroupLocalDatasource extends Mock implements GroupLocalDatasource {}
+
 class MockGroupMessageLocalDatasource extends Mock
     implements GroupMessageLocalDatasource {}
 
@@ -45,32 +51,36 @@ void main() {
     mockGroupDatasource = MockGroupLocalDatasource();
     mockGroupMessageDatasource = MockGroupMessageLocalDatasource();
 
-    when(() => mockProfileService.fetchProfiles(any())).thenAnswer((_) async {});
-    when(() => mockProfileService.getProfile(any())).thenAnswer((_) async => null);
+    when(
+      () => mockProfileService.fetchProfiles(any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => mockProfileService.getProfile(any()),
+    ).thenAnswer((_) async => null);
     when(() => mockGroupDatasource.getAllGroups()).thenAnswer((_) async => []);
   });
 
   setUpAll(() {
-    registerFallbackValue(ChatSession(
-      id: 'fallback',
-      recipientPubkeyHex: 'abc123',
-      createdAt: DateTime.now(),
-      isInitiator: true,
-    ));
+    registerFallbackValue(
+      ChatSession(
+        id: 'fallback',
+        recipientPubkeyHex: 'abc123',
+        createdAt: DateTime.now(),
+        isInitiator: true,
+      ),
+    );
   });
 
-  Widget buildChatListScreen({
-    List<ChatSession> sessions = const [],
-  }) {
-    when(() => mockSessionDatasource.getAllSessions()).thenAnswer(
-      (_) async => sessions,
-    );
-    when(() => mockSessionDatasource.getSessionState(any())).thenAnswer(
-      (_) async => null,
-    );
-    when(() => mockInviteDatasource.getActiveInvites()).thenAnswer(
-      (_) async => [],
-    );
+  Widget buildChatListScreen({List<ChatSession> sessions = const []}) {
+    when(
+      () => mockSessionDatasource.getAllSessions(),
+    ).thenAnswer((_) async => sessions);
+    when(
+      () => mockSessionDatasource.getSessionState(any()),
+    ).thenAnswer((_) async => null);
+    when(
+      () => mockInviteDatasource.getActiveInvites(),
+    ).thenAnswer((_) async => []);
 
     final router = GoRouter(
       initialLocation: '/chats',
@@ -81,7 +91,8 @@ void main() {
           routes: [
             GoRoute(
               path: 'new',
-              builder: (context, state) => const Scaffold(body: Text('New Chat')),
+              builder: (context, state) =>
+                  const Scaffold(body: Text('New Chat')),
             ),
           ],
         ),
@@ -96,10 +107,16 @@ void main() {
       overrides: [
         sessionDatasourceProvider.overrideWithValue(mockSessionDatasource),
         inviteDatasourceProvider.overrideWithValue(mockInviteDatasource),
-        messageSubscriptionProvider.overrideWithValue(mockSessionManagerService),
-        sessionManagerServiceProvider.overrideWithValue(mockSessionManagerService),
+        messageSubscriptionProvider.overrideWithValue(
+          mockSessionManagerService,
+        ),
+        sessionManagerServiceProvider.overrideWithValue(
+          mockSessionManagerService,
+        ),
         groupDatasourceProvider.overrideWithValue(mockGroupDatasource),
-        groupMessageDatasourceProvider.overrideWithValue(mockGroupMessageDatasource),
+        groupMessageDatasourceProvider.overrideWithValue(
+          mockGroupMessageDatasource,
+        ),
         profileServiceProvider.overrideWithValue(mockProfileService),
         connectivityStatusProvider.overrideWith(
           (_) => Stream.value(ConnectivityStatus.online),
@@ -111,6 +128,7 @@ void main() {
         minTextAdapt: true,
         builder: (context, _) {
           return MaterialApp.router(
+            theme: createTestTheme(),
             routerConfig: router,
           );
         },
@@ -209,8 +227,9 @@ void main() {
         expect(find.text('Hey, how are you?'), findsOneWidget);
       });
 
-      testWidgets('shows unread count badge when unread messages exist',
-          (tester) async {
+      testWidgets('shows unread count badge when unread messages exist', (
+        tester,
+      ) async {
         final sessions = [
           ChatSession(
             id: 'session-1',
@@ -227,8 +246,9 @@ void main() {
         expect(find.text('5'), findsOneWidget);
       });
 
-      testWidgets('does not show unread badge when count is zero',
-          (tester) async {
+      testWidgets('does not show unread badge when count is zero', (
+        tester,
+      ) async {
         final sessions = [
           ChatSession(
             id: 'session-1',
@@ -245,8 +265,7 @@ void main() {
         expect(find.text('0'), findsNothing);
       });
 
-      testWidgets('shows animal name when no recipient name',
-          (tester) async {
+      testWidgets('shows animal name when no recipient name', (tester) async {
         const pubkey = 'abcd1234567890abcd1234567890abcd';
         final sessions = [
           ChatSession(
