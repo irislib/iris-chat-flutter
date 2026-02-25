@@ -9,6 +9,7 @@ import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/desktop_notification_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
 import '../../../../config/providers/messaging_preferences_provider.dart';
+import '../../../../config/providers/mobile_push_provider.dart';
 import '../../../../config/providers/startup_launch_provider.dart';
 import '../../../../core/services/secure_storage_service.dart';
 import '../../../../shared/utils/formatters.dart';
@@ -24,6 +25,7 @@ class SettingsScreen extends ConsumerWidget {
     final desktopNotificationsSupported = ref.watch(
       desktopNotificationsSupportedProvider,
     );
+    final mobilePushSupported = ref.watch(mobilePushSupportedProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -131,6 +133,20 @@ class SettingsScreen extends ConsumerWidget {
                   : (value) => ref
                         .read(messagingPreferencesProvider.notifier)
                         .setDesktopNotificationsEnabled(value),
+            ),
+          if (mobilePushSupported)
+            SwitchListTile(
+              secondary: const Icon(Icons.phone_iphone),
+              title: const Text('Mobile Push Notifications'),
+              subtitle: const Text(
+                'Register this device for server-delivered chat push alerts',
+              ),
+              value: messagingPreferences.mobilePushNotificationsEnabled,
+              onChanged: messagingPreferences.isLoading
+                  ? null
+                  : (value) => ref
+                        .read(messagingPreferencesProvider.notifier)
+                        .setMobilePushNotificationsEnabled(value),
             ),
           if (messagingPreferences.error != null)
             Padding(

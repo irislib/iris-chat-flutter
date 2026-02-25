@@ -9,6 +9,7 @@ class MessagingPreferencesState {
     this.deliveryReceiptsEnabled = true,
     this.readReceiptsEnabled = true,
     this.desktopNotificationsEnabled = true,
+    this.mobilePushNotificationsEnabled = true,
     this.error,
   });
 
@@ -17,6 +18,7 @@ class MessagingPreferencesState {
   final bool deliveryReceiptsEnabled;
   final bool readReceiptsEnabled;
   final bool desktopNotificationsEnabled;
+  final bool mobilePushNotificationsEnabled;
   final String? error;
 
   MessagingPreferencesState copyWith({
@@ -25,6 +27,7 @@ class MessagingPreferencesState {
     bool? deliveryReceiptsEnabled,
     bool? readReceiptsEnabled,
     bool? desktopNotificationsEnabled,
+    bool? mobilePushNotificationsEnabled,
     String? error,
     bool clearError = false,
   }) {
@@ -37,6 +40,8 @@ class MessagingPreferencesState {
       readReceiptsEnabled: readReceiptsEnabled ?? this.readReceiptsEnabled,
       desktopNotificationsEnabled:
           desktopNotificationsEnabled ?? this.desktopNotificationsEnabled,
+      mobilePushNotificationsEnabled:
+          mobilePushNotificationsEnabled ?? this.mobilePushNotificationsEnabled,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -63,6 +68,7 @@ class MessagingPreferencesNotifier
         deliveryReceiptsEnabled: snapshot.deliveryReceiptsEnabled,
         readReceiptsEnabled: snapshot.readReceiptsEnabled,
         desktopNotificationsEnabled: snapshot.desktopNotificationsEnabled,
+        mobilePushNotificationsEnabled: snapshot.mobilePushNotificationsEnabled,
         clearError: true,
       );
     } catch (e) {
@@ -80,6 +86,7 @@ class MessagingPreferencesNotifier
         deliveryReceiptsEnabled: snapshot.deliveryReceiptsEnabled,
         readReceiptsEnabled: snapshot.readReceiptsEnabled,
         desktopNotificationsEnabled: snapshot.desktopNotificationsEnabled,
+        mobilePushNotificationsEnabled: snapshot.mobilePushNotificationsEnabled,
         clearError: true,
       );
     } catch (e) {
@@ -97,6 +104,7 @@ class MessagingPreferencesNotifier
         deliveryReceiptsEnabled: snapshot.deliveryReceiptsEnabled,
         readReceiptsEnabled: snapshot.readReceiptsEnabled,
         desktopNotificationsEnabled: snapshot.desktopNotificationsEnabled,
+        mobilePushNotificationsEnabled: snapshot.mobilePushNotificationsEnabled,
         clearError: true,
       );
     } catch (e) {
@@ -114,6 +122,7 @@ class MessagingPreferencesNotifier
         deliveryReceiptsEnabled: snapshot.deliveryReceiptsEnabled,
         readReceiptsEnabled: snapshot.readReceiptsEnabled,
         desktopNotificationsEnabled: snapshot.desktopNotificationsEnabled,
+        mobilePushNotificationsEnabled: snapshot.mobilePushNotificationsEnabled,
         clearError: true,
       );
     } catch (e) {
@@ -131,6 +140,25 @@ class MessagingPreferencesNotifier
         deliveryReceiptsEnabled: snapshot.deliveryReceiptsEnabled,
         readReceiptsEnabled: snapshot.readReceiptsEnabled,
         desktopNotificationsEnabled: snapshot.desktopNotificationsEnabled,
+        mobilePushNotificationsEnabled: snapshot.mobilePushNotificationsEnabled,
+        clearError: true,
+      );
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> setMobilePushNotificationsEnabled(bool value) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final snapshot = await _service.setMobilePushNotificationsEnabled(value);
+      state = state.copyWith(
+        isLoading: false,
+        typingIndicatorsEnabled: snapshot.typingIndicatorsEnabled,
+        deliveryReceiptsEnabled: snapshot.deliveryReceiptsEnabled,
+        readReceiptsEnabled: snapshot.readReceiptsEnabled,
+        desktopNotificationsEnabled: snapshot.desktopNotificationsEnabled,
+        mobilePushNotificationsEnabled: snapshot.mobilePushNotificationsEnabled,
         clearError: true,
       );
     } catch (e) {

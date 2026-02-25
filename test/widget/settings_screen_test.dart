@@ -5,6 +5,7 @@ import 'package:iris_chat/config/providers/auth_provider.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
 import 'package:iris_chat/config/providers/desktop_notification_provider.dart';
 import 'package:iris_chat/config/providers/messaging_preferences_provider.dart';
+import 'package:iris_chat/config/providers/mobile_push_provider.dart';
 import 'package:iris_chat/config/providers/startup_launch_provider.dart';
 import 'package:iris_chat/core/services/database_service.dart';
 import 'package:iris_chat/core/services/messaging_preferences_service.dart';
@@ -45,16 +46,19 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
     this.deliveryReceiptsEnabled = true,
     this.readReceiptsEnabled = true,
     this.desktopNotificationsEnabled = true,
+    this.mobilePushNotificationsEnabled = true,
   });
 
   bool typingIndicatorsEnabled;
   bool deliveryReceiptsEnabled;
   bool readReceiptsEnabled;
   bool desktopNotificationsEnabled;
+  bool mobilePushNotificationsEnabled;
   int setTypingCalls = 0;
   int setDeliveryCalls = 0;
   int setReadCalls = 0;
   int setDesktopNotificationsCalls = 0;
+  int setMobilePushNotificationsCalls = 0;
 
   @override
   Future<MessagingPreferencesSnapshot> load() async {
@@ -63,6 +67,7 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
       deliveryReceiptsEnabled: deliveryReceiptsEnabled,
       readReceiptsEnabled: readReceiptsEnabled,
       desktopNotificationsEnabled: desktopNotificationsEnabled,
+      mobilePushNotificationsEnabled: mobilePushNotificationsEnabled,
     );
   }
 
@@ -101,6 +106,15 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
     desktopNotificationsEnabled = value;
     return load();
   }
+
+  @override
+  Future<MessagingPreferencesSnapshot> setMobilePushNotificationsEnabled(
+    bool value,
+  ) async {
+    setMobilePushNotificationsCalls += 1;
+    mobilePushNotificationsEnabled = value;
+    return load();
+  }
 }
 
 void main() {
@@ -122,6 +136,7 @@ void main() {
     FakeStartupLaunchService? startupService,
     FakeMessagingPreferencesService? messagingService,
     bool? desktopNotificationsSupported,
+    bool? mobilePushSupported,
   }) {
     final overrides = [
       authRepositoryProvider.overrideWithValue(mockAuthRepo),
@@ -149,11 +164,13 @@ void main() {
         ),
       );
     }
+    if (mobilePushSupported != null) {
+      overrides.add(
+        mobilePushSupportedProvider.overrideWith((ref) => mobilePushSupported),
+      );
+    }
 
-    return createTestApp(
-      const SettingsScreen(),
-      overrides: overrides,
-    );
+    return createTestApp(const SettingsScreen(), overrides: overrides);
   }
 
   group('SettingsScreen', () {
@@ -381,16 +398,21 @@ void main() {
           buildSettingsScreen(
             pubkeyHex: testPubkeyHex,
             desktopNotificationsSupported: true,
+            mobilePushSupported: true,
           ),
         );
         await tester.pumpAndSettle();
-        await tester.scrollUntilVisible(find.text('Desktop Notifications'), 300);
+        await tester.scrollUntilVisible(
+          find.text('Mobile Push Notifications'),
+          300,
+        );
 
         expect(find.text('Messaging'), findsOneWidget);
         expect(find.text('Send Typing Indicators'), findsOneWidget);
         expect(find.text('Send Delivery Receipts'), findsOneWidget);
         expect(find.text('Send Read Receipts'), findsOneWidget);
         expect(find.text('Desktop Notifications'), findsOneWidget);
+        expect(find.text('Mobile Push Notifications'), findsOneWidget);
       });
 
       testWidgets('updates typing indicator preference when toggled', (
@@ -432,13 +454,42 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        await tester.scrollUntilVisible(find.text('Desktop Notifications'), 300);
+        await tester.scrollUntilVisible(
+          find.text('Desktop Notifications'),
+          300,
+        );
 
         await tester.tap(find.text('Desktop Notifications'));
         await tester.pumpAndSettle();
 
         expect(service.setDesktopNotificationsCalls, 1);
         expect(service.desktopNotificationsEnabled, isFalse);
+      });
+
+      testWidgets('updates mobile push preference when toggled', (
+        tester,
+      ) async {
+        final service = FakeMessagingPreferencesService(
+          mobilePushNotificationsEnabled: true,
+        );
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            messagingService: service,
+            mobilePushSupported: true,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Mobile Push Notifications'),
+          300,
+        );
+
+        await tester.tap(find.text('Mobile Push Notifications'));
+        await tester.pumpAndSettle();
+
+        expect(service.setMobilePushNotificationsCalls, 1);
+        expect(service.mobilePushNotificationsEnabled, isFalse);
       });
     });
 

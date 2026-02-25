@@ -18,6 +18,7 @@ void main() {
       expect(snapshot.deliveryReceiptsEnabled, isTrue);
       expect(snapshot.readReceiptsEnabled, isTrue);
       expect(snapshot.desktopNotificationsEnabled, isTrue);
+      expect(snapshot.mobilePushNotificationsEnabled, isTrue);
     });
 
     test('setTypingIndicatorsEnabled persists value', () async {
@@ -70,6 +71,22 @@ void main() {
       expect(snapshot.desktopNotificationsEnabled, isFalse);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('settings.desktop_notifications_enabled'), isFalse);
+    });
+
+    test('setMobilePushNotificationsEnabled persists value', () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = MessagingPreferencesServiceImpl(
+        preferencesFactory: SharedPreferences.getInstance,
+      );
+
+      final snapshot = await service.setMobilePushNotificationsEnabled(false);
+
+      expect(snapshot.mobilePushNotificationsEnabled, isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getBool('settings.mobile_push_notifications_enabled'),
+        isFalse,
+      );
     });
   });
 }

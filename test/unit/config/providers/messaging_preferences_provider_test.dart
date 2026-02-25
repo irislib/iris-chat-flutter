@@ -8,6 +8,7 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
     this.deliveryEnabled = true,
     this.readEnabled = true,
     this.desktopNotificationsEnabled = true,
+    this.mobilePushNotificationsEnabled = true,
     this.throwOnLoad = false,
     this.throwOnTyping = false,
   });
@@ -16,6 +17,7 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
   bool deliveryEnabled;
   bool readEnabled;
   bool desktopNotificationsEnabled;
+  bool mobilePushNotificationsEnabled;
   final bool throwOnLoad;
   final bool throwOnTyping;
 
@@ -27,6 +29,7 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
       deliveryReceiptsEnabled: deliveryEnabled,
       readReceiptsEnabled: readEnabled,
       desktopNotificationsEnabled: desktopNotificationsEnabled,
+      mobilePushNotificationsEnabled: mobilePushNotificationsEnabled,
     );
   }
 
@@ -62,6 +65,14 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
     desktopNotificationsEnabled = value;
     return load();
   }
+
+  @override
+  Future<MessagingPreferencesSnapshot> setMobilePushNotificationsEnabled(
+    bool value,
+  ) async {
+    mobilePushNotificationsEnabled = value;
+    return load();
+  }
 }
 
 void main() {
@@ -73,6 +84,7 @@ void main() {
           deliveryEnabled: true,
           readEnabled: false,
           desktopNotificationsEnabled: false,
+          mobilePushNotificationsEnabled: false,
         ),
         autoLoad: false,
       );
@@ -84,6 +96,7 @@ void main() {
       expect(notifier.state.deliveryReceiptsEnabled, isTrue);
       expect(notifier.state.readReceiptsEnabled, isFalse);
       expect(notifier.state.desktopNotificationsEnabled, isFalse);
+      expect(notifier.state.mobilePushNotificationsEnabled, isFalse);
       expect(notifier.state.error, isNull);
     });
 
@@ -110,6 +123,19 @@ void main() {
       await notifier.setDesktopNotificationsEnabled(false);
 
       expect(notifier.state.desktopNotificationsEnabled, isFalse);
+      expect(notifier.state.error, isNull);
+    });
+
+    test('setMobilePushNotificationsEnabled updates state', () async {
+      final notifier = MessagingPreferencesNotifier(
+        FakeMessagingPreferencesService(),
+        autoLoad: false,
+      );
+      await notifier.load();
+
+      await notifier.setMobilePushNotificationsEnabled(false);
+
+      expect(notifier.state.mobilePushNotificationsEnabled, isFalse);
       expect(notifier.state.error, isNull);
     });
 

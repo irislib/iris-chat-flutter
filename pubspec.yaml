@@ -57,6 +57,8 @@ dependencies:
   nostr: ^1.5.0
   launch_at_startup: ^0.5.1
   flutter_local_notifications: ^19.5.0
+  firebase_core: ^4.2.0
+  firebase_messaging: ^16.0.2
 
 dev_dependencies:
   flutter_test:

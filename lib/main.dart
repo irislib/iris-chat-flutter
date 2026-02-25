@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import 'config/providers/mobile_push_provider.dart';
 import 'config/providers/startup_launch_provider.dart';
 import 'config/router.dart';
 import 'config/theme.dart';
@@ -19,6 +20,8 @@ class IrisChatApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
     // Initialize startup-launch preference at app start.
     ref.watch(startupLaunchProvider);
+    // Initialize mobile push sync for supported platforms.
+    ref.watch(mobilePushSyncBootstrapProvider);
 
     return ScreenUtilInit(
       designSize: const Size(390, 844),
