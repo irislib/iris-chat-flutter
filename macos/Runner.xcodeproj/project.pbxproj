@@ -118,8 +118,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				65008794AF1864E545435B39 /* Pods_Runner.framework in Frameworks */,
-				HTRFFI0004000000000001 /* libhashtree_ffi.a in Frameworks */,
-				NDRFFI0003000000000001 /* libndr_ffi.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

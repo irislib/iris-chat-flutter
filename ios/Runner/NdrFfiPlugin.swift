@@ -1,6 +1,8 @@
 import Flutter
 import UIKit
 
+#if NATIVE_RUST_FFI_ENABLED
+
 // Wrapper to avoid naming conflict with NSObject.version
 private func ndrVersion() -> String {
     return version()
@@ -1155,3 +1157,47 @@ enum PluginError: Error {
         }
     }
 }
+
+#else
+
+public class NdrFfiPlugin: NSObject, FlutterPlugin {
+    public static func register(with registrar: FlutterPluginRegistrar) {
+        let channel = FlutterMethodChannel(
+            name: "to.iris.chat/ndr_ffi",
+            binaryMessenger: registrar.messenger()
+        )
+        registrar.addMethodCallDelegate(NdrFfiPlugin(), channel: channel)
+    }
+
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        if call.method == "version" {
+            result("ffi-disabled")
+            return
+        }
+        result(FlutterError(
+            code: "NativeUnavailable",
+            message: "iOS native FFI is disabled in this build.",
+            details: nil
+        ))
+    }
+}
+
+public class HashtreePlugin: NSObject, FlutterPlugin {
+    public static func register(with registrar: FlutterPluginRegistrar) {
+        let channel = FlutterMethodChannel(
+            name: "to.iris.chat/hashtree",
+            binaryMessenger: registrar.messenger()
+        )
+        registrar.addMethodCallDelegate(HashtreePlugin(), channel: channel)
+    }
+
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        result(FlutterError(
+            code: "NativeUnavailable",
+            message: "iOS hashtree native FFI is disabled in this build.",
+            details: nil
+        ))
+    }
+}
+
+#endif

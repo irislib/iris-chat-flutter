@@ -82,8 +82,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				HTRFFI0001000000002 /* libhashtree_ffi.a in Frameworks */,
-				NDRFFI0001000000003 /* libndr_ffi.a in Frameworks */,
 				24BB183563B6A618E4E43C91 /* Pods_Runner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
