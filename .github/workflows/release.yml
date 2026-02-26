@@ -86,8 +86,8 @@ jobs:
       - name: Prepare Android signing files (optional)
         if: ${{ env.ANDROID_KEYSTORE_B64 != '' && env.ANDROID_KEYSTORE_PASSWORD != '' && env.ANDROID_KEY_ALIAS != '' && env.ANDROID_KEY_PASSWORD != '' }}
         run: |
-          printf '%s' "${ANDROID_KEYSTORE_B64}" | base64 --decode > android/upload-keystore.jks 2>/dev/null || \
-            printf '%s' "${ANDROID_KEYSTORE_B64}" | base64 -D > android/upload-keystore.jks
+          printf '%s' "${ANDROID_KEYSTORE_B64}" | base64 --decode > android/app/upload-keystore.jks 2>/dev/null || \
+            printf '%s' "${ANDROID_KEYSTORE_B64}" | base64 -D > android/app/upload-keystore.jks
 
           {
             printf 'storePassword=%s\n' "${ANDROID_KEYSTORE_PASSWORD}"
@@ -118,7 +118,7 @@ jobs:
 
       - name: Cleanup Android signing files (optional)
         if: ${{ always() && env.ANDROID_KEYSTORE_B64 != '' && env.ANDROID_KEYSTORE_PASSWORD != '' && env.ANDROID_KEY_ALIAS != '' && env.ANDROID_KEY_PASSWORD != '' }}
-        run: rm -f android/key.properties android/upload-keystore.jks
+        run: rm -f android/key.properties android/app/upload-keystore.jks
 
   build-linux:
     name: Build Linux release artifacts
