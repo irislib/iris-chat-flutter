@@ -27,7 +27,6 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   Future<void> _create() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
-    if (_selectedMembers.isEmpty) return;
     if (_creating) return;
 
     setState(() => _creating = true);
@@ -142,10 +141,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed:
-                      (_creating ||
-                          _nameController.text.trim().isEmpty ||
-                          _selectedMembers.isEmpty)
+                  onPressed: (_creating || _nameController.text.trim().isEmpty)
                       ? null
                       : _create,
                   child: _creating
