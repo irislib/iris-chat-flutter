@@ -114,6 +114,7 @@ void main() {
     List<ChatSession> sessions = const [],
     Map<String, bool>? relayConnectionStatus,
     ConnectivityStatus connectivityStatus = ConnectivityStatus.online,
+    bool throwOnMessageSubscriptionInit = false,
   }) {
     when(
       () => mockSessionDatasource.getAllSessions(),
@@ -150,9 +151,14 @@ void main() {
       overrides: [
         sessionDatasourceProvider.overrideWithValue(mockSessionDatasource),
         inviteDatasourceProvider.overrideWithValue(mockInviteDatasource),
-        messageSubscriptionProvider.overrideWithValue(
-          mockSessionManagerService,
-        ),
+        if (throwOnMessageSubscriptionInit)
+          messageSubscriptionProvider.overrideWith((_) {
+            throw Exception('message subscription init failed');
+          })
+        else
+          messageSubscriptionProvider.overrideWithValue(
+            mockSessionManagerService,
+          ),
         sessionManagerServiceProvider.overrideWithValue(
           mockSessionManagerService,
         ),
@@ -324,6 +330,21 @@ void main() {
         'redirects to new chat when there are no sessions or groups',
         (tester) async {
           await tester.pumpWidget(buildChatListScreen(sessions: []));
+          await tester.pumpAndSettle();
+
+          expect(find.text('New Chat'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'still redirects to new chat when message subscription init fails',
+        (tester) async {
+          await tester.pumpWidget(
+            buildChatListScreen(
+              sessions: [],
+              throwOnMessageSubscriptionInit: true,
+            ),
+          );
           await tester.pumpAndSettle();
 
           expect(find.text('New Chat'), findsOneWidget);

@@ -32,13 +32,18 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await ref.read(sessionStateProvider.notifier).loadSessions();
-      await ref.read(groupStateProvider.notifier).loadGroups();
-      await ref.read(inviteStateProvider.notifier).loadInvites();
-      // Start message subscription
-      ref.read(messageSubscriptionProvider);
-      if (mounted) {
-        setState(() => _initialLoadDone = true);
+      try {
+        await ref.read(sessionStateProvider.notifier).loadSessions();
+        await ref.read(groupStateProvider.notifier).loadGroups();
+        await ref.read(inviteStateProvider.notifier).loadInvites();
+        // Best-effort start message subscription.
+        try {
+          ref.read(messageSubscriptionProvider);
+        } catch (_) {}
+      } finally {
+        if (mounted) {
+          setState(() => _initialLoadDone = true);
+        }
       }
     });
   }
