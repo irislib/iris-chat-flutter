@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/presentation/screens/link_device_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
+import '../features/chat/presentation/screens/app_bootstrap_screen.dart';
 import '../features/chat/presentation/screens/chat_list_screen.dart';
 import '../features/chat/presentation/screens/chat_screen.dart';
 import '../features/chat/presentation/screens/create_group_screen.dart';
@@ -13,10 +14,12 @@ import '../features/chat/presentation/screens/new_chat_screen.dart';
 import '../features/invite/presentation/screens/create_invite_screen.dart';
 import '../features/invite/presentation/screens/scan_invite_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
+import 'providers/app_bootstrap_provider.dart';
 import 'providers/auth_provider.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
+  final bootstrapState = ref.watch(appBootstrapProvider);
 
   // Trigger auth check on first access
   if (!authState.isInitialized && !authState.isLoading) {
@@ -36,23 +39,34 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthenticated = authState.isAuthenticated;
       final isAuthRoute =
           state.matchedLocation == '/login' || state.matchedLocation == '/link';
+      final isBootstrapRoute = state.matchedLocation == '/bootstrap';
 
       if (!isAuthenticated && !isAuthRoute) {
         return '/login';
       }
+      if (!isAuthenticated && isBootstrapRoute) {
+        return '/login';
+      }
       if (isAuthenticated && isAuthRoute) {
+        return bootstrapState.isReady ? '/chats' : '/bootstrap';
+      }
+      if (isAuthenticated && !bootstrapState.isReady && !isBootstrapRoute) {
+        return '/bootstrap';
+      }
+      if (isAuthenticated && bootstrapState.isReady && isBootstrapRoute) {
         return '/chats';
       }
       return null;
     },
     routes: [
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/link',
         builder: (context, state) => const LinkDeviceScreen(),
+      ),
+      GoRoute(
+        path: '/bootstrap',
+        builder: (context, state) => const AppBootstrapScreen(),
       ),
       GoRoute(
         path: '/',
@@ -80,9 +94,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: ':id',
-            builder: (context, state) => ChatScreen(
-              sessionId: state.pathParameters['id']!,
-            ),
+            builder: (context, state) =>
+                ChatScreen(sessionId: state.pathParameters['id']!),
           ),
         ],
       ),
@@ -100,15 +113,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/groups/:id',
-        builder: (context, state) => GroupChatScreen(
-          groupId: state.pathParameters['id']!,
-        ),
+        builder: (context, state) =>
+            GroupChatScreen(groupId: state.pathParameters['id']!),
         routes: [
           GoRoute(
             path: 'info',
-            builder: (context, state) => GroupInfoScreen(
-              groupId: state.pathParameters['id']!,
-            ),
+            builder: (context, state) =>
+                GroupInfoScreen(groupId: state.pathParameters['id']!),
           ),
         ],
       ),
@@ -118,9 +129,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
     errorBuilder: (context, state) => Scaffold(
-      body: Center(
-        child: Text('Page not found: ${state.matchedLocation}'),
-      ),
+      body: Center(child: Text('Page not found: ${state.matchedLocation}')),
     ),
   );
 });

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -27,8 +29,13 @@ class ChatListScreen extends ConsumerStatefulWidget {
 class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   bool _initialLoadDone = false;
   bool _redirected = false;
+  bool _loadingPersistedThreads = false;
   static const int _kInitialLoadMaxAttempts = 3;
   static const Duration _kInitialLoadRetryDelay = Duration(milliseconds: 250);
+  static const Duration _kStartupHydrationMaxWait = Duration(seconds: 15);
+  static const Duration _kStartupHydrationRetryDelay = Duration(
+    milliseconds: 500,
+  );
 
   Future<void> _loadWithRetry({
     required Future<void> Function() load,
@@ -46,19 +53,44 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     }
   }
 
+  Future<void> _loadPersistedThreads() async {
+    if (_loadingPersistedThreads) return;
+    _loadingPersistedThreads = true;
+    try {
+      await _loadWithRetry(
+        load: () => ref.read(sessionStateProvider.notifier).loadSessions(),
+        readError: () => ref.read(sessionStateProvider).error,
+      );
+      await _loadWithRetry(
+        load: () => ref.read(groupStateProvider.notifier).loadGroups(),
+        readError: () => ref.read(groupStateProvider).error,
+      );
+    } finally {
+      _loadingPersistedThreads = false;
+    }
+  }
+
+  Future<void> _loadPersistedThreadsUntilReady() async {
+    final deadline = DateTime.now().add(_kStartupHydrationMaxWait);
+
+    while (mounted) {
+      await _loadPersistedThreads();
+
+      final sessionError = ref.read(sessionStateProvider).error;
+      final groupError = ref.read(groupStateProvider).error;
+      if (sessionError == null && groupError == null) return;
+      if (DateTime.now().isAfter(deadline)) return;
+
+      await Future<void>.delayed(_kStartupHydrationRetryDelay);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        await _loadWithRetry(
-          load: () => ref.read(sessionStateProvider.notifier).loadSessions(),
-          readError: () => ref.read(sessionStateProvider).error,
-        );
-        await _loadWithRetry(
-          load: () => ref.read(groupStateProvider.notifier).loadGroups(),
-          readError: () => ref.read(groupStateProvider).error,
-        );
+        await _loadPersistedThreadsUntilReady();
         await ref.read(inviteStateProvider.notifier).loadInvites();
         // Best-effort start message subscription.
         try {
@@ -91,7 +123,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     final groups = ref.watch(groupStateProvider.select((s) => s.groups));
     // Don't block showing existing sessions while group metadata is still loading.
     final showInitialLoading =
-        (sessionsLoading || groupsLoading) &&
+        (!_initialLoadDone || sessionsLoading || groupsLoading) &&
         sessions.isEmpty &&
         groups.isEmpty;
 
