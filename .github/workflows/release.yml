@@ -49,7 +49,6 @@ jobs:
       contents: read
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      ANDROID_SIGNING_ENABLED: ${{ vars.ANDROID_SIGNING_ENABLED }}
       ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -77,16 +76,16 @@ jobs:
       - name: Generate code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Prepare Android signing files (optional)
-        if: ${{ env.ANDROID_SIGNING_ENABLED == 'true' }}
+      - name: Validate Android signing secret completeness (optional)
+        if: ${{ (env.ANDROID_KEYSTORE_B64 != '' || env.ANDROID_KEYSTORE_PASSWORD != '' || env.ANDROID_KEY_ALIAS != '' || env.ANDROID_KEY_PASSWORD != '') && !(env.ANDROID_KEYSTORE_B64 != '' && env.ANDROID_KEYSTORE_PASSWORD != '' && env.ANDROID_KEY_ALIAS != '' && env.ANDROID_KEY_PASSWORD != '') }}
         run: |
-          for var in ANDROID_KEYSTORE_B64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            if [ -z "${!var}" ]; then
-              echo "Missing required Android signing secret: ${var}"
-              exit 1
-            fi
-          done
+          echo "Android signing requires all four secrets or none."
+          echo "Required: ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD"
+          exit 1
 
+      - name: Prepare Android signing files (optional)
+        if: ${{ env.ANDROID_KEYSTORE_B64 != '' && env.ANDROID_KEYSTORE_PASSWORD != '' && env.ANDROID_KEY_ALIAS != '' && env.ANDROID_KEY_PASSWORD != '' }}
+        run: |
           printf '%s' "${ANDROID_KEYSTORE_B64}" | base64 --decode > android/upload-keystore.jks 2>/dev/null || \
             printf '%s' "${ANDROID_KEYSTORE_B64}" | base64 -D > android/upload-keystore.jks
 
@@ -118,7 +117,7 @@ jobs:
           retention-days: 7
 
       - name: Cleanup Android signing files (optional)
-        if: ${{ always() && env.ANDROID_SIGNING_ENABLED == 'true' }}
+        if: ${{ always() && env.ANDROID_KEYSTORE_B64 != '' && env.ANDROID_KEYSTORE_PASSWORD != '' && env.ANDROID_KEY_ALIAS != '' && env.ANDROID_KEY_PASSWORD != '' }}
         run: rm -f android/key.properties android/upload-keystore.jks
 
   build-linux:
@@ -227,8 +226,6 @@ jobs:
       contents: read
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      MACOS_SIGNING_ENABLED: ${{ vars.MACOS_SIGNING_ENABLED }}
-      MACOS_NOTARIZATION_ENABLED: ${{ vars.MACOS_NOTARIZATION_ENABLED }}
       MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
       MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -292,8 +289,22 @@ jobs:
             exit 1
           fi
 
+      - name: Validate macOS signing secret completeness (optional)
+        if: ${{ (env.MACOS_SIGNING_IDENTITY != '' || env.MACOS_CERTIFICATE_P12 != '' || env.MACOS_CERTIFICATE_PASSWORD != '') && !(env.MACOS_SIGNING_IDENTITY != '' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '') }}
+        run: |
+          echo "macOS signing requires all three secrets or none."
+          echo "Required: MACOS_SIGNING_IDENTITY, MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD"
+          exit 1
+
+      - name: Validate macOS notarization secret completeness (optional)
+        if: ${{ (env.MACOS_NOTARIZE_APPLE_ID != '' || env.MACOS_NOTARIZE_APP_PASSWORD != '' || env.MACOS_NOTARIZE_TEAM_ID != '') && !(env.MACOS_NOTARIZE_APPLE_ID != '' && env.MACOS_NOTARIZE_APP_PASSWORD != '' && env.MACOS_NOTARIZE_TEAM_ID != '') }}
+        run: |
+          echo "macOS notarization requires all three notarization secrets or none."
+          echo "Required: MACOS_NOTARIZE_APPLE_ID, MACOS_NOTARIZE_APP_PASSWORD, MACOS_NOTARIZE_TEAM_ID"
+          exit 1
+
       - name: Install macOS signing certificate (optional)
-        if: ${{ env.MACOS_SIGNING_ENABLED == 'true' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
+        if: ${{ env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/iris-chat-signing.keychain-db"
           KEYCHAIN_PASSWORD="${MACOS_KEYCHAIN_PASSWORD:-temp_signing_password}"
@@ -317,7 +328,7 @@ jobs:
           fi
 
       - name: Code sign macOS app (optional)
-        if: ${{ env.MACOS_SIGNING_ENABLED == 'true' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
+        if: ${{ env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
         run: |
           APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "${APP_PATH}" ]; then
@@ -339,7 +350,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
       - name: Notarize macOS app (optional)
-        if: ${{ env.MACOS_SIGNING_ENABLED == 'true' && env.MACOS_NOTARIZATION_ENABLED == 'true' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' && env.MACOS_NOTARIZE_APPLE_ID != '' && env.MACOS_NOTARIZE_APP_PASSWORD != '' && env.MACOS_NOTARIZE_TEAM_ID != '' }}
+        if: ${{ env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' && env.MACOS_NOTARIZE_APPLE_ID != '' && env.MACOS_NOTARIZE_APP_PASSWORD != '' && env.MACOS_NOTARIZE_TEAM_ID != '' }}
         run: |
           APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "${APP_PATH}" ]; then
@@ -376,7 +387,7 @@ jobs:
           retention-days: 7
 
       - name: Cleanup macOS signing keychain (optional)
-        if: ${{ always() && env.MACOS_SIGNING_ENABLED == 'true' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
+        if: ${{ always() && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/iris-chat-signing.keychain-db"
           security delete-keychain "${KEYCHAIN_PATH}" || true
