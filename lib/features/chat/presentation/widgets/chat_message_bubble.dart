@@ -3,11 +3,13 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../config/providers/hashtree_attachment_provider.dart';
 import '../../../../core/utils/hashtree_attachments.dart';
@@ -59,8 +61,13 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
   final Map<String, Uint8List> _attachmentCache = {};
   final Map<String, Future<Uint8List>> _attachmentFutureCache = {};
   final Set<String> _notifiedMediaLayout = <String>{};
+  final List<TapGestureRecognizer> _linkRecognizers = [];
 
   static const _quickEmojis = ['❤️', '👍', '😂', '😮', '😢', '🙏'];
+  static final RegExp _urlPattern = RegExp(
+    r'((?:https?:\/\/|www\.)[^\s<]+)',
+    caseSensitive: false,
+  );
   static const _margin = EdgeInsets.symmetric(vertical: 4);
   static const _padding = EdgeInsets.symmetric(horizontal: 12, vertical: 8);
   static const _outgoingBorderRadius = BorderRadius.only(
@@ -79,7 +86,15 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
   @override
   void dispose() {
     _hoverHideTimer?.cancel();
+    _disposeLinkRecognizers();
     super.dispose();
+  }
+
+  void _disposeLinkRecognizers() {
+    for (final recognizer in _linkRecognizers) {
+      recognizer.dispose();
+    }
+    _linkRecognizers.clear();
   }
 
   void _onHoverEnter(PointerEnterEvent _) {
@@ -149,6 +164,119 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
         content: Text('Deleted locally'),
         duration: Duration(seconds: 1),
       ),
+    );
+  }
+
+  (String, String) _splitTrailingUrlPunctuation(String value) {
+    const trailingPunctuation = '.,!?;:)]}';
+    var splitIndex = value.length;
+    while (splitIndex > 0 &&
+        trailingPunctuation.contains(value[splitIndex - 1])) {
+      splitIndex--;
+    }
+    return (value.substring(0, splitIndex), value.substring(splitIndex));
+  }
+
+  String _normalizeLinkUrl(String value) {
+    final lower = value.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://')) {
+      return value;
+    }
+    if (lower.startsWith('www.')) {
+      return 'https://$value';
+    }
+    return value;
+  }
+
+  Future<void> _openMessageLink(String text) async {
+    final normalized = _normalizeLinkUrl(text);
+    final uri = Uri.tryParse(normalized);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      return;
+    }
+
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (launched || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to open link'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to open link'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  List<InlineSpan> _buildBodyTextSpans(
+    String text,
+    TextStyle baseStyle,
+    TextStyle linkStyle,
+  ) {
+    _disposeLinkRecognizers();
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+
+    for (final match in _urlPattern.allMatches(text)) {
+      if (match.start > cursor) {
+        spans.add(
+          TextSpan(text: text.substring(cursor, match.start), style: baseStyle),
+        );
+      }
+
+      final rawMatch = match.group(0)!;
+      final (linkText, trailingText) = _splitTrailingUrlPunctuation(rawMatch);
+      if (linkText.isNotEmpty) {
+        final recognizer = TapGestureRecognizer()
+          ..onTap = () => unawaited(_openMessageLink(linkText));
+        _linkRecognizers.add(recognizer);
+        spans.add(
+          TextSpan(text: linkText, style: linkStyle, recognizer: recognizer),
+        );
+      } else {
+        spans.add(TextSpan(text: rawMatch, style: baseStyle));
+      }
+      if (trailingText.isNotEmpty) {
+        spans.add(TextSpan(text: trailingText, style: baseStyle));
+      }
+      cursor = match.end;
+    }
+
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor), style: baseStyle));
+    }
+
+    return spans;
+  }
+
+  Widget _buildMessageBodyText(String text, ThemeData theme, bool isOutgoing) {
+    final baseStyle = TextStyle(
+      color: isOutgoing
+          ? theme.colorScheme.onPrimaryContainer
+          : theme.colorScheme.onSurface,
+    );
+    if (!_urlPattern.hasMatch(text)) {
+      _disposeLinkRecognizers();
+      return Text(text, style: baseStyle);
+    }
+
+    final linkStyle = baseStyle.copyWith(
+      color: theme.colorScheme.primary,
+      decoration: TextDecoration.underline,
+    );
+    return Text.rich(
+      TextSpan(children: _buildBodyTextSpans(text, baseStyle, linkStyle)),
+      style: baseStyle,
     );
   }
 
@@ -802,13 +930,10 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                               if (attachments.isNotEmpty && bodyText.isNotEmpty)
                                 const SizedBox(height: 8),
                               if (bodyText.isNotEmpty)
-                                Text(
+                                _buildMessageBodyText(
                                   bodyText,
-                                  style: TextStyle(
-                                    color: isOutgoing
-                                        ? theme.colorScheme.onPrimaryContainer
-                                        : theme.colorScheme.onSurface,
-                                  ),
+                                  theme,
+                                  isOutgoing,
                                 ),
                               if (bodyText.isNotEmpty || attachments.isNotEmpty)
                                 const SizedBox(height: 4),

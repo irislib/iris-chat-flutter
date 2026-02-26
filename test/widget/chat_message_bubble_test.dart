@@ -739,6 +739,100 @@ void main() {
   });
 
   testWidgets(
+    'ChatMessageBubble: tapping https link launches external browser',
+    (tester) async {
+      MethodCall? launchCall;
+      const urlLauncherChannel = MethodChannel(
+        'plugins.flutter.io/url_launcher',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(urlLauncherChannel, (call) async {
+            if (call.method == 'launch') {
+              launchCall = call;
+              return true;
+            }
+            if (call.method == 'canLaunch') {
+              return true;
+            }
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(urlLauncherChannel, null);
+      });
+
+      await tester.pumpWidget(
+        wrap(
+          ChatMessageBubble(
+            message: buildMessage(
+              direction: MessageDirection.incoming,
+              text: 'https://example.com',
+            ),
+            onReact: (_) async {},
+            onDeleteLocal: () async {},
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('https://example.com', findRichText: true));
+      await tester.pumpAndSettle();
+
+      expect(launchCall, isNotNull);
+      final args = launchCall!.arguments as Map<dynamic, dynamic>;
+      expect(args['url'], 'https://example.com');
+      expect(args['useSafariVC'], isFalse);
+      expect(args['useWebView'], isFalse);
+    },
+  );
+
+  testWidgets(
+    'ChatMessageBubble: tapping www link launches external browser using https',
+    (tester) async {
+      MethodCall? launchCall;
+      const urlLauncherChannel = MethodChannel(
+        'plugins.flutter.io/url_launcher',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(urlLauncherChannel, (call) async {
+            if (call.method == 'launch') {
+              launchCall = call;
+              return true;
+            }
+            if (call.method == 'canLaunch') {
+              return true;
+            }
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(urlLauncherChannel, null);
+      });
+
+      await tester.pumpWidget(
+        wrap(
+          ChatMessageBubble(
+            message: buildMessage(
+              direction: MessageDirection.incoming,
+              text: 'www.example.com',
+            ),
+            onReact: (_) async {},
+            onDeleteLocal: () async {},
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('www.example.com', findRichText: true));
+      await tester.pumpAndSettle();
+
+      expect(launchCall, isNotNull);
+      final args = launchCall!.arguments as Map<dynamic, dynamic>;
+      expect(args['url'], 'https://www.example.com');
+      expect(args['useSafariVC'], isFalse);
+      expect(args['useWebView'], isFalse);
+    },
+  );
+
+  testWidgets(
     'ChatMessageBubble: hover action dock buttons work (reply/react/more)',
     (tester) async {
       var replyCount = 0;
