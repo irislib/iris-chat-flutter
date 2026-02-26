@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/connectivity_provider.dart';
-import '../../../../config/providers/invite_provider.dart';
 import '../../../../config/providers/nostr_provider.dart';
 import '../../../../core/services/connectivity_service.dart';
 import '../../../../core/services/profile_service.dart';
@@ -27,80 +26,30 @@ class ChatListScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatListScreenState extends ConsumerState<ChatListScreen> {
-  bool _initialLoadDone = false;
+  bool _initialProbeDone = false;
   bool _redirected = false;
-  bool _loadingPersistedThreads = false;
-  static const int _kInitialLoadMaxAttempts = 3;
-  static const Duration _kInitialLoadRetryDelay = Duration(milliseconds: 250);
-  static const Duration _kStartupHydrationMaxWait = Duration(seconds: 15);
-  static const Duration _kStartupHydrationRetryDelay = Duration(
-    milliseconds: 500,
-  );
 
-  Future<void> _loadWithRetry({
-    required Future<void> Function() load,
-    required String? Function() readError,
-  }) async {
-    for (var attempt = 0; attempt < _kInitialLoadMaxAttempts; attempt++) {
-      await load();
-      if (readError() == null) return;
-      if (attempt >= _kInitialLoadMaxAttempts - 1) return;
-      await Future<void>.delayed(
-        Duration(
-          milliseconds: _kInitialLoadRetryDelay.inMilliseconds * (attempt + 1),
-        ),
-      );
+  Future<void> _probePersistedThreads() async {
+    final sessionState = ref.read(sessionStateProvider);
+    final groupState = ref.read(groupStateProvider);
+    final hasPersistedThreads =
+        sessionState.sessions.isNotEmpty || groupState.groups.isNotEmpty;
+
+    if (!hasPersistedThreads) {
+      await ref.read(sessionStateProvider.notifier).loadSessions();
+      await ref.read(groupStateProvider.notifier).loadGroups();
     }
-  }
 
-  Future<void> _loadPersistedThreads() async {
-    if (_loadingPersistedThreads) return;
-    _loadingPersistedThreads = true;
-    try {
-      await _loadWithRetry(
-        load: () => ref.read(sessionStateProvider.notifier).loadSessions(),
-        readError: () => ref.read(sessionStateProvider).error,
-      );
-      await _loadWithRetry(
-        load: () => ref.read(groupStateProvider.notifier).loadGroups(),
-        readError: () => ref.read(groupStateProvider).error,
-      );
-    } finally {
-      _loadingPersistedThreads = false;
-    }
-  }
-
-  Future<void> _loadPersistedThreadsUntilReady() async {
-    final deadline = DateTime.now().add(_kStartupHydrationMaxWait);
-
-    while (mounted) {
-      await _loadPersistedThreads();
-
-      final sessionError = ref.read(sessionStateProvider).error;
-      final groupError = ref.read(groupStateProvider).error;
-      if (sessionError == null && groupError == null) return;
-      if (DateTime.now().isAfter(deadline)) return;
-
-      await Future<void>.delayed(_kStartupHydrationRetryDelay);
+    if (mounted) {
+      setState(() => _initialProbeDone = true);
     }
   }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        await _loadPersistedThreadsUntilReady();
-        await ref.read(inviteStateProvider.notifier).loadInvites();
-        // Best-effort start message subscription.
-        try {
-          ref.read(messageSubscriptionProvider);
-        } catch (_) {}
-      } finally {
-        if (mounted) {
-          setState(() => _initialLoadDone = true);
-        }
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_probePersistedThreads());
     });
   }
 
@@ -123,12 +72,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     final groups = ref.watch(groupStateProvider.select((s) => s.groups));
     // Don't block showing existing sessions while group metadata is still loading.
     final showInitialLoading =
-        (!_initialLoadDone || sessionsLoading || groupsLoading) &&
+        (!_initialProbeDone || sessionsLoading || groupsLoading) &&
         sessions.isEmpty &&
         groups.isEmpty;
 
     // Redirect to new chat if empty (only once after initial load completes)
-    if (_initialLoadDone &&
+    if (_initialProbeDone &&
         !sessionsLoading &&
         !groupsLoading &&
         sessionsError == null &&

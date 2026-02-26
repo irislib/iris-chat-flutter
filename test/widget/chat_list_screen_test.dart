@@ -365,54 +365,6 @@ void main() {
           expect(find.text('New Chat'), findsOneWidget);
         },
       );
-
-      testWidgets('retries loading sessions after transient startup failure', (
-        tester,
-      ) async {
-        await tester.pumpWidget(
-          buildChatListScreen(
-            sessions: [
-              ChatSession(
-                id: 'session-1',
-                recipientPubkeyHex: 'abcd1234567890abcd1234567890abcd',
-                recipientName: 'Alice',
-                createdAt: DateTime.now(),
-              ),
-            ],
-            failSessionLoadsBeforeSuccess: 1,
-          ),
-        );
-        await tester.pump(const Duration(seconds: 1));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Alice'), findsOneWidget);
-        expect(find.text('New Chat'), findsNothing);
-      });
-
-      testWidgets('recovers from longer startup lock without user action', (
-        tester,
-      ) async {
-        await tester.pumpWidget(
-          buildChatListScreen(
-            sessions: [
-              ChatSession(
-                id: 'session-1',
-                recipientPubkeyHex: 'abcd1234567890abcd1234567890abcd',
-                recipientName: 'Alice',
-                createdAt: DateTime.now(),
-              ),
-            ],
-            failSessionLoadsBeforeSuccess: 3,
-          ),
-        );
-
-        await tester.pumpAndSettle();
-        await tester.pump(const Duration(seconds: 2));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Alice'), findsOneWidget);
-        expect(find.text('New Chat'), findsNothing);
-      });
     });
 
     group('session list', () {
