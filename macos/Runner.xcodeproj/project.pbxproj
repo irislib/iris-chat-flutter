@@ -28,6 +28,7 @@
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
+		60A1A0B12BC6A289005DE406 /* LaunchAtLogin in Frameworks */ = {isa = PBXBuildFile; productRef = 60A1A0B22BC6A289005DE406 /* LaunchAtLogin */; };
 		65008794AF1864E545435B39 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0DC9FEFA0D1AEB2FBDD4D4E9 /* Pods_Runner.framework */; };
 		HTRFFI0001000000000001 /* hashtree_ffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = HTRFFI0001000000000000 /* hashtree_ffi.swift */; };
 		HTRFFI0004000000000001 /* libhashtree_ffi.a in Frameworks */ = {isa = PBXBuildFile; fileRef = HTRFFI0004000000000000 /* libhashtree_ffi.a */; };
@@ -117,6 +118,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				60A1A0B12BC6A289005DE406 /* LaunchAtLogin in Frameworks */,
 				65008794AF1864E545435B39 /* Pods_Runner.framework in Frameworks */,
 				HTRFFI0004000000000001 /* libhashtree_ffi.a in Frameworks */,
 				NDRFFI0003000000000001 /* libndr_ffi.a in Frameworks */,
@@ -279,6 +281,7 @@
 				33CC10E92044A3C60003C045 /* Sources */,
 				33CC10EA2044A3C60003C045 /* Frameworks */,
 				33CC10EB2044A3C60003C045 /* Resources */,
+				60A1A0B42BC6A2AF005DE406 /* Copy "Launch at Login Helper" */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				F70CB804C5BEA3D043E284D5 /* [CP] Embed Pods Frameworks */,
@@ -290,6 +293,9 @@
 				33CC11202044C79F0003C045 /* PBXTargetDependency */,
 			);
 			name = Runner;
+			packageProductDependencies = (
+				60A1A0B22BC6A289005DE406 /* LaunchAtLogin */,
+			);
 			productName = Runner;
 			productReference = 33CC10ED2044A3C60003C045 /* iris_chat.app */;
 			productType = "com.apple.product-type.application";
@@ -334,6 +340,9 @@
 				Base,
 			);
 			mainGroup = 33CC10E42044A3C60003C045;
+			packageReferences = (
+				60A1A0B32BC6A289005DE406 /* XCRemoteSwiftPackageReference "LaunchAtLogin" */,
+			);
 			productRefGroup = 33CC10EE2044A3C60003C045 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -441,6 +450,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire";
+		};
+		60A1A0B42BC6A2AF005DE406 /* Copy "Launch at Login Helper" */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy \"Launch at Login Helper\"";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${BUILT_PRODUCTS_DIR}/LaunchAtLogin_LaunchAtLogin.bundle/Contents/Resources/copy-helper-swiftpm.sh\"\n";
 		};
 		7DEABC7215AD8A02FC11B305 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -893,6 +921,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		60A1A0B32BC6A289005DE406 /* XCRemoteSwiftPackageReference "LaunchAtLogin" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/LaunchAtLogin";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		60A1A0B22BC6A289005DE406 /* LaunchAtLogin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 60A1A0B32BC6A289005DE406 /* XCRemoteSwiftPackageReference "LaunchAtLogin" */;
+			productName = LaunchAtLogin;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 33CC10E52044A3C60003C045 /* Project object */;
 }
