@@ -45,6 +45,8 @@ class GroupNotifier extends StateNotifier<GroupState> {
 
   static const Duration _kTypingExpiry = Duration(seconds: 10);
   static const Duration _kTypingThrottle = Duration(seconds: 3);
+  static const Duration _kLoadTimeout = Duration(seconds: 3);
+  static const Duration _kGroupUpsertTimeout = Duration(seconds: 2);
 
   // Queue events that arrive before the group's metadata.
   final Map<String, List<_PendingGroupEvent>> _pendingByGroupId = {};
@@ -107,11 +109,15 @@ class GroupNotifier extends StateNotifier<GroupState> {
   Future<void> loadGroups() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final groups = await _groupDatasource.getAllGroups();
+      final groups = await _groupDatasource.getAllGroups().timeout(
+        _kLoadTimeout,
+      );
       state = state.copyWith(groups: groups, isLoading: false);
       for (final group in groups) {
         try {
-          await _upsertGroupInNativeManager(group);
+          await _upsertGroupInNativeManager(
+            group,
+          ).timeout(_kGroupUpsertTimeout);
         } catch (_) {}
       }
     } catch (e, st) {

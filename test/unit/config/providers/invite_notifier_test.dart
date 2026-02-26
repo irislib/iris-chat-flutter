@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_chat/config/providers/invite_provider.dart';
@@ -21,11 +23,13 @@ void main() {
   });
 
   setUpAll(() {
-    registerFallbackValue(Invite(
-      id: 'fallback',
-      inviterPubkeyHex: 'pubkey',
-      createdAt: DateTime.now(),
-    ));
+    registerFallbackValue(
+      Invite(
+        id: 'fallback',
+        inviterPubkeyHex: 'pubkey',
+        createdAt: DateTime.now(),
+      ),
+    );
   });
 
   group('InviteNotifier', () {
@@ -53,9 +57,9 @@ void main() {
 
     group('loadInvites', () {
       test('sets isLoading true while loading', () async {
-        when(() => mockDatasource.getActiveInvites()).thenAnswer(
-          (_) async => [],
-        );
+        when(
+          () => mockDatasource.getActiveInvites(),
+        ).thenAnswer((_) async => []);
 
         final future = notifier.loadInvites();
         await future;
@@ -78,9 +82,9 @@ void main() {
           ),
         ];
 
-        when(() => mockDatasource.getActiveInvites()).thenAnswer(
-          (_) async => invites,
-        );
+        when(
+          () => mockDatasource.getActiveInvites(),
+        ).thenAnswer((_) async => invites);
 
         await notifier.loadInvites();
 
@@ -90,9 +94,9 @@ void main() {
       });
 
       test('sets error on failure', () async {
-        when(() => mockDatasource.getActiveInvites()).thenThrow(
-          Exception('Database error'),
-        );
+        when(
+          () => mockDatasource.getActiveInvites(),
+        ).thenThrow(Exception('Database error'));
 
         await notifier.loadInvites();
 
@@ -100,6 +104,19 @@ void main() {
         expect(notifier.state.isLoading, false);
         // Error messages are mapped to user-friendly text; just ensure we
         // surface an error rather than crashing.
+        expect(notifier.state.error, isNotNull);
+      });
+
+      test('sets error when datasource read hangs', () async {
+        final completer = Completer<List<Invite>>();
+        when(
+          () => mockDatasource.getActiveInvites(),
+        ).thenAnswer((_) => completer.future);
+
+        await notifier.loadInvites().timeout(const Duration(seconds: 4));
+
+        expect(notifier.state.invites, isEmpty);
+        expect(notifier.state.isLoading, false);
         expect(notifier.state.error, isNotNull);
       });
     });
@@ -112,12 +129,12 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(() => mockDatasource.getActiveInvites()).thenAnswer(
-          (_) async => [invite],
-        );
-        when(() => mockDatasource.deleteInvite('invite-1')).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => mockDatasource.getActiveInvites(),
+        ).thenAnswer((_) async => [invite]);
+        when(
+          () => mockDatasource.deleteInvite('invite-1'),
+        ).thenAnswer((_) async {});
 
         await notifier.loadInvites();
         expect(notifier.state.invites, isNotEmpty);
@@ -137,12 +154,10 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(() => mockDatasource.getActiveInvites()).thenAnswer(
-          (_) async => [invite],
-        );
-        when(() => mockDatasource.updateInvite(any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => mockDatasource.getActiveInvites(),
+        ).thenAnswer((_) async => [invite]);
+        when(() => mockDatasource.updateInvite(any())).thenAnswer((_) async {});
 
         await notifier.loadInvites();
         await notifier.updateLabel('invite-1', 'Friends');
@@ -154,9 +169,9 @@ void main() {
 
     group('clearError', () {
       test('clears error state', () async {
-        when(() => mockDatasource.getActiveInvites()).thenThrow(
-          Exception('Error'),
-        );
+        when(
+          () => mockDatasource.getActiveInvites(),
+        ).thenThrow(Exception('Error'));
 
         await notifier.loadInvites();
         expect(notifier.state.error, isNotNull);

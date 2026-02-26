@@ -19,19 +19,25 @@ void main() {
   late MockProfileService mockProfileService;
 
   setUpAll(() {
-    registerFallbackValue(ChatSession(
-      id: 'fallback',
-      recipientPubkeyHex: 'abc123',
-      createdAt: DateTime.now(),
-      isInitiator: true,
-    ));
+    registerFallbackValue(
+      ChatSession(
+        id: 'fallback',
+        recipientPubkeyHex: 'abc123',
+        createdAt: DateTime.now(),
+        isInitiator: true,
+      ),
+    );
   });
 
   setUp(() {
     mockDatasource = MockSessionLocalDatasource();
     mockProfileService = MockProfileService();
-    when(() => mockProfileService.fetchProfiles(any())).thenAnswer((_) async {});
-    when(() => mockProfileService.getProfile(any())).thenAnswer((_) async => null);
+    when(
+      () => mockProfileService.fetchProfiles(any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => mockProfileService.getProfile(any()),
+    ).thenAnswer((_) async => null);
     notifier = SessionNotifier(mockDatasource, mockProfileService);
   });
 
@@ -52,9 +58,7 @@ void main() {
 
     group('loadSessions', () {
       test('sets isLoading true while loading', () async {
-        when(() => mockDatasource.getAllSessions()).thenAnswer(
-          (_) async => [],
-        );
+        when(() => mockDatasource.getAllSessions()).thenAnswer((_) async => []);
 
         final future = notifier.loadSessions();
 
@@ -77,9 +81,9 @@ void main() {
           ),
         ];
 
-        when(() => mockDatasource.getAllSessions()).thenAnswer(
-          (_) async => sessions,
-        );
+        when(
+          () => mockDatasource.getAllSessions(),
+        ).thenAnswer((_) async => sessions);
 
         await notifier.loadSessions();
 
@@ -89,9 +93,9 @@ void main() {
       });
 
       test('sets error on failure', () async {
-        when(() => mockDatasource.getAllSessions()).thenThrow(
-          Exception('Database error'),
-        );
+        when(
+          () => mockDatasource.getAllSessions(),
+        ).thenThrow(Exception('Database error'));
 
         await notifier.loadSessions();
 
@@ -100,6 +104,19 @@ void main() {
         // Error is mapped to user-friendly message
         expect(notifier.state.error, isNotNull);
         expect(notifier.state.error, isNotEmpty);
+      });
+
+      test('sets error when datasource read hangs', () async {
+        final completer = Completer<List<ChatSession>>();
+        when(
+          () => mockDatasource.getAllSessions(),
+        ).thenAnswer((_) => completer.future);
+
+        await notifier.loadSessions().timeout(const Duration(seconds: 4));
+
+        expect(notifier.state.sessions, isEmpty);
+        expect(notifier.state.isLoading, false);
+        expect(notifier.state.error, isNotNull);
       });
     });
 
@@ -110,10 +127,12 @@ void main() {
 
         // Simulate a stuck/locked DB call.
         final completer = Completer<ChatSession?>();
-        when(() => mockDatasource.getSessionByRecipient(any()))
-            .thenAnswer((_) => completer.future);
-        when(() => mockDatasource.insertSessionIfAbsent(any()))
-            .thenAnswer((_) async {});
+        when(
+          () => mockDatasource.getSessionByRecipient(any()),
+        ).thenAnswer((_) => completer.future);
+        when(
+          () => mockDatasource.insertSessionIfAbsent(any()),
+        ).thenAnswer((_) async {});
 
         final session = await notifier
             .ensureSessionForRecipient(pubkeyHex)
@@ -132,9 +151,9 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(() => mockDatasource.saveSession(session)).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => mockDatasource.saveSession(session),
+        ).thenAnswer((_) async {});
 
         await notifier.addSession(session);
 
@@ -154,9 +173,7 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(() => mockDatasource.saveSession(any())).thenAnswer(
-          (_) async {},
-        );
+        when(() => mockDatasource.saveSession(any())).thenAnswer((_) async {});
 
         await notifier.addSession(session1);
         await notifier.addSession(session2);
@@ -173,19 +190,14 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(() => mockDatasource.saveSession(any())).thenAnswer(
-          (_) async {},
-        );
+        when(() => mockDatasource.saveSession(any())).thenAnswer((_) async {});
 
         await notifier.addSession(session);
 
         final updatedSession = session.copyWith(recipientName: 'Alice');
         await notifier.updateSession(updatedSession);
 
-        expect(
-          notifier.state.sessions.first.recipientName,
-          'Alice',
-        );
+        expect(notifier.state.sessions.first.recipientName, 'Alice');
       });
     });
 
@@ -197,12 +209,12 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(() => mockDatasource.saveSession(session)).thenAnswer(
-          (_) async {},
-        );
-        when(() => mockDatasource.deleteSession('session-1')).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => mockDatasource.saveSession(session),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.deleteSession('session-1'),
+        ).thenAnswer((_) async {});
 
         await notifier.addSession(session);
         expect(notifier.state.sessions, isNotEmpty);
@@ -222,14 +234,16 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(() => mockDatasource.saveSession(session)).thenAnswer(
-          (_) async {},
-        );
-        when(() => mockDatasource.updateMetadata(
-              any(),
-              lastMessageAt: any(named: 'lastMessageAt'),
-              lastMessagePreview: any(named: 'lastMessagePreview'),
-            )).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.saveSession(session),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.updateMetadata(
+            any(),
+            lastMessageAt: any(named: 'lastMessageAt'),
+            lastMessagePreview: any(named: 'lastMessagePreview'),
+          ),
+        ).thenAnswer((_) async {});
 
         await notifier.addSession(session);
 
@@ -255,14 +269,16 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(() => mockDatasource.saveSession(session)).thenAnswer(
-          (_) async {},
-        );
-        when(() => mockDatasource.updateMetadata(
-              any(),
-              lastMessageAt: any(named: 'lastMessageAt'),
-              lastMessagePreview: any(named: 'lastMessagePreview'),
-            )).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.saveSession(session),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.updateMetadata(
+            any(),
+            lastMessageAt: any(named: 'lastMessageAt'),
+            lastMessagePreview: any(named: 'lastMessagePreview'),
+          ),
+        ).thenAnswer((_) async {});
 
         await notifier.addSession(session);
 
@@ -298,13 +314,15 @@ void main() {
           unreadCount: 0,
         );
 
-        when(() => mockDatasource.saveSession(session)).thenAnswer(
-          (_) async {},
-        );
-        when(() => mockDatasource.updateMetadata(
-              any(),
-              unreadCount: any(named: 'unreadCount'),
-            )).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.saveSession(session),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.updateMetadata(
+            any(),
+            unreadCount: any(named: 'unreadCount'),
+          ),
+        ).thenAnswer((_) async {});
 
         await notifier.addSession(session);
         await notifier.incrementUnread('session-1');
@@ -322,13 +340,15 @@ void main() {
           unreadCount: 5,
         );
 
-        when(() => mockDatasource.saveSession(session)).thenAnswer(
-          (_) async {},
-        );
-        when(() => mockDatasource.updateMetadata(
-              any(),
-              unreadCount: any(named: 'unreadCount'),
-            )).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.saveSession(session),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockDatasource.updateMetadata(
+            any(),
+            unreadCount: any(named: 'unreadCount'),
+          ),
+        ).thenAnswer((_) async {});
 
         await notifier.addSession(session);
         await notifier.clearUnread('session-1');

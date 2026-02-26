@@ -6,6 +6,7 @@ class SessionNotifier extends StateNotifier<SessionState> {
 
   final SessionLocalDatasource _sessionDatasource;
   final ProfileService _profileService;
+  static const Duration _kLoadTimeout = Duration(seconds: 3);
 
   void _upsertSessionInState(ChatSession session) {
     // Avoid duplicate sessions in memory when the same session is "added" twice
@@ -30,7 +31,9 @@ class SessionNotifier extends StateNotifier<SessionState> {
   Future<void> loadSessions() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final sessions = await _sessionDatasource.getAllSessions();
+      final sessions = await _sessionDatasource.getAllSessions().timeout(
+        _kLoadTimeout,
+      );
       state = state.copyWith(sessions: sessions, isLoading: false);
 
       // Fetch profile metadata (names + avatars) for all recipients.

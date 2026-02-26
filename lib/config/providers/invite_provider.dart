@@ -36,12 +36,15 @@ class InviteNotifier extends StateNotifier<InviteState> {
 
   final InviteLocalDatasource _datasource;
   final Ref _ref;
+  static const Duration _kLoadTimeout = Duration(seconds: 3);
 
   /// Load all invites from storage.
   Future<void> loadInvites() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final invites = await _datasource.getActiveInvites();
+      final invites = await _datasource.getActiveInvites().timeout(
+        _kLoadTimeout,
+      );
       state = state.copyWith(invites: invites, isLoading: false);
     } catch (e, st) {
       final appError = AppError.from(e, st);
