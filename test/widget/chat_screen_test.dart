@@ -68,8 +68,16 @@ void main() {
     List<ChatMessage> messages = const [],
     ChatSession? session,
     void Function(SessionNotifier notifier)? onSessionNotifierCreated,
+    String? profilePictureUrl,
   }) {
     final effectiveSession = session ?? testSession;
+    final profileService = ProfileService(mockNostrService);
+    profileService.upsertProfile(
+      pubkey: effectiveSession.recipientPubkeyHex,
+      displayName: effectiveSession.recipientName,
+      picture: profilePictureUrl,
+      updatedAt: DateTime(2026, 2, 1),
+    );
 
     when(
       () => mockSessionDatasource.getAllSessions(),
@@ -128,10 +136,11 @@ void main() {
         sessionManagerServiceProvider.overrideWithValue(
           mockSessionManagerService,
         ),
+        profileServiceProvider.overrideWithValue(profileService),
         sessionStateProvider.overrideWith((ref) {
           final notifier = SessionNotifier(
             mockSessionDatasource,
-            MockProfileService(),
+            profileService,
           );
           // Pre-populate the sessions
           notifier.state = SessionState(
@@ -598,6 +607,26 @@ void main() {
 
         // Dialog should be closed - Public Key should no longer be visible
         expect(find.text('Public Key'), findsNothing);
+      });
+
+      testWidgets('opens profile picture modal from user info avatar', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildChatScreen(profilePictureUrl: 'https://example.com/alice.png'),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('chat-header-info-button')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('user_info_avatar_button')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('chat_attachment_image_viewer')),
+          findsOneWidget,
+        );
       });
     });
 

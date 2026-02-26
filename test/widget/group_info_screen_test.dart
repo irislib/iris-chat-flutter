@@ -395,6 +395,53 @@ void main() {
     expect(find.text('Remove Photo'), findsNothing);
   });
 
+  testWidgets('group photo opens in image modal when tapped', (tester) async {
+    final mockAuthRepo = _MockAuthRepository();
+    final mockSessions = _MockSessionLocalDatasource();
+    final mockProfiles = _MockProfileService();
+
+    await tester.pumpWidget(
+      createTestApp(
+        const GroupInfoScreen(groupId: 'g1'),
+        overrides: [
+          authRepositoryProvider.overrideWithValue(mockAuthRepo),
+          authStateProvider.overrideWith((ref) {
+            final notifier = AuthNotifier(mockAuthRepo);
+            notifier.state = const AuthState(
+              isAuthenticated: true,
+              pubkeyHex: testPubkeyHex,
+              devicePubkeyHex: testPubkeyHex,
+              isInitialized: true,
+            );
+            return notifier;
+          }),
+          sessionStateProvider.overrideWith((ref) {
+            final notifier = SessionNotifier(mockSessions, mockProfiles);
+            notifier.state = const SessionState(sessions: []);
+            return notifier;
+          }),
+          groupStateProvider.overrideWith((ref) {
+            return _TestGroupNotifier(
+              makeGroup(
+                admins: [testPubkeyHex],
+              ).copyWith(picture: 'https://example.com/group.png'),
+            );
+          }),
+        ],
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('group_info_avatar_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('chat_attachment_image_viewer')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('non-admin cannot edit group members', (tester) async {
     final mockAuthRepo = _MockAuthRepository();
     final mockSessions = _MockSessionLocalDatasource();

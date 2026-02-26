@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/hashtree_attachment_provider.dart';
+import '../../../../core/utils/hashtree_attachments.dart';
 import '../../../../shared/utils/formatters.dart';
+import '../../../../shared/widgets/image_viewer_modal.dart';
 import '../../domain/models/group.dart';
 import '../../domain/models/session.dart';
 import '../../domain/utils/chat_settings.dart';
@@ -256,6 +258,54 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
+  bool _isHttpUrl(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null) return false;
+    final scheme = uri.scheme.toLowerCase();
+    return (scheme == 'http' || scheme == 'https') && uri.host.isNotEmpty;
+  }
+
+  bool _canOpenGroupPicture(ChatGroup group) {
+    final picture = group.picture?.trim();
+    if (picture == null || picture.isEmpty) return false;
+
+    final parsed = parseHashtreeFileLink(picture);
+    if (parsed != null) {
+      return isImageFilename(parsed.filename);
+    }
+
+    return _isHttpUrl(picture);
+  }
+
+  Future<void> _openGroupPicture(ChatGroup group) async {
+    final picture = group.picture?.trim();
+    if (picture == null || picture.isEmpty) return;
+
+    final parsed = parseHashtreeFileLink(picture);
+    if (parsed != null) {
+      if (!isImageFilename(parsed.filename)) return;
+      try {
+        final bytes = await ref
+            .read(hashtreeAttachmentServiceProvider)
+            .downloadFile(link: parsed);
+        if (!mounted) return;
+        if (bytes.isEmpty) {
+          throw Exception('empty image');
+        }
+        await showImageViewerModal(context, imageProvider: MemoryImage(bytes));
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to open image: $e')));
+      }
+      return;
+    }
+
+    if (!_isHttpUrl(picture)) return;
+    await showImageViewerModal(context, imageProvider: NetworkImage(picture));
+  }
+
   ChatGroup? _findGroup(List<ChatGroup> groups) {
     for (final g in groups) {
       if (g.id == widget.groupId) return g;
@@ -294,6 +344,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           );
 
     final theme = Theme.of(context);
+    final canOpenGroupPicture = _canOpenGroupPicture(group);
 
     return Scaffold(
       appBar: AppBar(
@@ -313,13 +364,30 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 children: [
                   Row(
                     children: [
-                      GroupAvatar(
-                        groupName: group.name,
-                        picture: group.picture,
-                        radius: 28,
-                        backgroundColor: theme.colorScheme.secondaryContainer,
-                        iconColor: theme.colorScheme.onSecondaryContainer,
-                      ),
+                      canOpenGroupPicture
+                          ? InkResponse(
+                              key: const ValueKey('group_info_avatar_button'),
+                              onTap: () => _openGroupPicture(group),
+                              radius: 34,
+                              customBorder: const CircleBorder(),
+                              child: GroupAvatar(
+                                groupName: group.name,
+                                picture: group.picture,
+                                radius: 28,
+                                backgroundColor:
+                                    theme.colorScheme.secondaryContainer,
+                                iconColor:
+                                    theme.colorScheme.onSecondaryContainer,
+                              ),
+                            )
+                          : GroupAvatar(
+                              groupName: group.name,
+                              picture: group.picture,
+                              radius: 28,
+                              backgroundColor:
+                                  theme.colorScheme.secondaryContainer,
+                              iconColor: theme.colorScheme.onSecondaryContainer,
+                            ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(

@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../config/providers/hashtree_attachment_provider.dart';
 import '../../../../core/utils/hashtree_attachments.dart';
 import '../../../../shared/utils/formatters.dart';
+import '../../../../shared/widgets/image_viewer_modal.dart';
 import '../../domain/models/message.dart';
 
 enum _MessageMenuAction { copy, deleteLocal }
@@ -315,67 +316,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
     try {
       final bytes = await _loadAttachmentBytes(link);
       if (!mounted) return;
-      await showGeneralDialog<void>(
-        context: context,
-        barrierDismissible: true,
-        barrierLabel: 'Image viewer',
-        barrierColor: Colors.black87,
-        transitionDuration: const Duration(milliseconds: 150),
-        pageBuilder: (dialogContext, animation, secondaryAnimation) {
-          return Focus(
-            autofocus: true,
-            onKeyEvent: (_, event) {
-              if (event is KeyDownEvent &&
-                  event.logicalKey == LogicalKeyboardKey.escape) {
-                unawaited(Navigator.of(dialogContext).maybePop());
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            child: Material(
-              key: const ValueKey('chat_attachment_image_viewer'),
-              color: Colors.black,
-              child: SafeArea(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: InteractiveViewer(
-                        minScale: 0.5,
-                        maxScale: 5,
-                        child: Center(
-                          child: Image.memory(
-                            bytes,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, _, _) => const SizedBox(
-                              height: 220,
-                              child: Center(
-                                child: Text(
-                                  'Failed to decode image',
-                                  style: TextStyle(color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: IconButton(
-                        key: const ValueKey('chat_attachment_image_close'),
-                        tooltip: 'Close image',
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        icon: const Icon(Icons.close, color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
+      await showImageViewerModal(context, imageProvider: MemoryImage(bytes));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

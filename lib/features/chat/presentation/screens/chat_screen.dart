@@ -9,10 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/hashtree_attachment_provider.dart';
+import '../../../../config/providers/imgproxy_settings_provider.dart';
 import '../../../../config/providers/nostr_provider.dart';
 import '../../../../core/services/hashtree_attachment_service.dart';
+import '../../../../core/services/imgproxy_service.dart';
 import '../../../../core/utils/hashtree_attachments.dart';
 import '../../../../shared/utils/formatters.dart';
+import '../../../../shared/widgets/image_viewer_modal.dart';
 import '../../domain/models/message.dart';
 import '../../domain/models/session.dart';
 import '../../domain/utils/chat_settings.dart';
@@ -679,6 +682,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
+  bool _isHttpUrl(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null) return false;
+    final scheme = uri.scheme.toLowerCase();
+    return (scheme == 'http' || scheme == 'https') && uri.host.isNotEmpty;
+  }
+
   void _showSessionInfo(
     BuildContext context,
     ChatSession session, {
@@ -688,6 +698,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final theme = Theme.of(context);
     int? selectedTtl = session.messageTtlSeconds;
     bool isSavingTtl = false;
+    final normalizedPicture = pictureUrl?.trim();
+    final hasProfilePicture =
+        normalizedPicture != null &&
+        normalizedPicture.isNotEmpty &&
+        _isHttpUrl(normalizedPicture);
+    final imgproxyState = ref.read(imgproxySettingsProvider);
+    final imgproxyService = ImgproxyService(imgproxyState.config);
+    final viewerPictureUrl = hasProfilePicture
+        ? imgproxyService.proxiedUrl(normalizedPicture)
+        : null;
 
     showModalBottomSheet(
       context: context,
@@ -727,15 +747,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   children: [
                     Row(
                       children: [
-                        ProfileAvatar(
-                          pubkeyHex: session.recipientPubkeyHex,
-                          displayName: displayName,
-                          pictureUrl: pictureUrl,
-                          radius: 28,
-                          backgroundColor: theme.colorScheme.primaryContainer,
-                          foregroundTextColor:
-                              theme.colorScheme.onPrimaryContainer,
-                        ),
+                        hasProfilePicture && viewerPictureUrl != null
+                            ? InkResponse(
+                                key: const ValueKey('user_info_avatar_button'),
+                                onTap: () => showImageViewerModal(
+                                  context,
+                                  imageProvider: NetworkImage(viewerPictureUrl),
+                                ),
+                                radius: 34,
+                                customBorder: const CircleBorder(),
+                                child: ProfileAvatar(
+                                  pubkeyHex: session.recipientPubkeyHex,
+                                  displayName: displayName,
+                                  pictureUrl: pictureUrl,
+                                  radius: 28,
+                                  backgroundColor:
+                                      theme.colorScheme.primaryContainer,
+                                  foregroundTextColor:
+                                      theme.colorScheme.onPrimaryContainer,
+                                ),
+                              )
+                            : ProfileAvatar(
+                                pubkeyHex: session.recipientPubkeyHex,
+                                displayName: displayName,
+                                pictureUrl: pictureUrl,
+                                radius: 28,
+                                backgroundColor:
+                                    theme.colorScheme.primaryContainer,
+                                foregroundTextColor:
+                                    theme.colorScheme.onPrimaryContainer,
+                              ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Column(
