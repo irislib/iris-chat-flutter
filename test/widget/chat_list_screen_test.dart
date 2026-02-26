@@ -319,6 +319,16 @@ void main() {
 
         expect(find.byType(Scaffold), findsWidgets);
       });
+
+      testWidgets(
+        'redirects to new chat when there are no sessions or groups',
+        (tester) async {
+          await tester.pumpWidget(buildChatListScreen(sessions: []));
+          await tester.pumpAndSettle();
+
+          expect(find.text('New Chat'), findsOneWidget);
+        },
+      );
     });
 
     group('session list', () {
