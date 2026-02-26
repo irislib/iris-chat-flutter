@@ -41,8 +41,14 @@ flutter build ios --release
 
 ## GitHub Release Code Signing (Optional)
 
-The release workflow can sign macOS artifacts only when signing secrets exist.
-If secrets are missing, the workflow still builds and publishes unsigned artifacts.
+The release workflow signs macOS artifacts only when the GitHub Actions variable
+`MACOS_SIGNING_ENABLED` is set to `true` and signing secrets are present.
+If not enabled, the workflow still builds and publishes unsigned artifacts.
+
+Variables:
+
+- `MACOS_SIGNING_ENABLED=true` to enable signing
+- `MACOS_NOTARIZATION_ENABLED=true` to enable notarization
 
 Required secrets for macOS signing:
 
@@ -50,7 +56,7 @@ Required secrets for macOS signing:
 - `MACOS_CERTIFICATE_P12` (base64-encoded `.p12` that includes private key)
 - `MACOS_CERTIFICATE_PASSWORD`
 
-Optional secrets for notarization (if all are present, notarization runs):
+Optional secrets for notarization (used only when `MACOS_NOTARIZATION_ENABLED=true`):
 
 - `MACOS_NOTARIZE_APPLE_ID`
 - `MACOS_NOTARIZE_APP_PASSWORD` (app-specific password)

@@ -198,6 +198,8 @@ jobs:
       contents: read
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      MACOS_SIGNING_ENABLED: ${{ vars.MACOS_SIGNING_ENABLED }}
+      MACOS_NOTARIZATION_ENABLED: ${{ vars.MACOS_NOTARIZATION_ENABLED }}
       MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
       MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -262,7 +264,7 @@ jobs:
           fi
 
       - name: Install macOS signing certificate (optional)
-        if: ${{ env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
+        if: ${{ env.MACOS_SIGNING_ENABLED == 'true' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/iris-chat-signing.keychain-db"
           KEYCHAIN_PASSWORD="${MACOS_KEYCHAIN_PASSWORD:-temp_signing_password}"
@@ -286,7 +288,7 @@ jobs:
           fi
 
       - name: Code sign macOS app (optional)
-        if: ${{ env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
+        if: ${{ env.MACOS_SIGNING_ENABLED == 'true' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
         run: |
           APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "${APP_PATH}" ]; then
@@ -308,7 +310,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
       - name: Notarize macOS app (optional)
-        if: ${{ env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' && env.MACOS_NOTARIZE_APPLE_ID != '' && env.MACOS_NOTARIZE_APP_PASSWORD != '' && env.MACOS_NOTARIZE_TEAM_ID != '' }}
+        if: ${{ env.MACOS_SIGNING_ENABLED == 'true' && env.MACOS_NOTARIZATION_ENABLED == 'true' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' && env.MACOS_NOTARIZE_APPLE_ID != '' && env.MACOS_NOTARIZE_APP_PASSWORD != '' && env.MACOS_NOTARIZE_TEAM_ID != '' }}
         run: |
           APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "${APP_PATH}" ]; then
@@ -345,7 +347,7 @@ jobs:
           retention-days: 7
 
       - name: Cleanup macOS signing keychain (optional)
-        if: ${{ always() && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
+        if: ${{ always() && env.MACOS_SIGNING_ENABLED == 'true' && env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/iris-chat-signing.keychain-db"
           security delete-keychain "${KEYCHAIN_PATH}" || true
