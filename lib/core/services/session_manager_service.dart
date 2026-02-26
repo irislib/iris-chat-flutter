@@ -42,6 +42,7 @@ class SessionManagerService {
 
   SessionManagerHandle? _manager;
   String? _ownerPubkeyHex;
+  String? _devicePubkeyHex;
   StreamSubscription<NostrEvent>? _eventSubscription;
   Timer? _drainTimer;
   bool _draining = false;
@@ -368,6 +369,7 @@ class SessionManagerService {
 
     await _manager!.init();
     _ownerPubkeyHex = await _manager!.getOwnerPubkeyHex();
+    _devicePubkeyHex = devicePubkeyHex;
 
     await _drainEvents();
     await _refreshGroupOuterSubscription();
@@ -413,9 +415,7 @@ class SessionManagerService {
         if (decrypted != null) {
           _decryptedController.add(
             DecryptedMessage(
-              senderPubkeyHex:
-                  decrypted.senderOwnerPubkeyHex ??
-                  decrypted.senderDevicePubkeyHex,
+              senderPubkeyHex: _resolveGroupSenderPubkeyHex(decrypted),
               content: decrypted.innerEventJson,
               eventId: decrypted.outerEventId,
               createdAt: decrypted.outerCreatedAt,
@@ -425,6 +425,27 @@ class SessionManagerService {
       } catch (_) {}
     }
     await _drainEvents();
+  }
+
+  String _resolveGroupSenderPubkeyHex(GroupDecryptedResult decrypted) {
+    final owner = _ownerPubkeyHex?.trim().toLowerCase();
+    final device = _devicePubkeyHex?.trim().toLowerCase();
+    final senderOwner = decrypted.senderOwnerPubkeyHex?.trim().toLowerCase();
+    final senderDevice = decrypted.senderDevicePubkeyHex.trim().toLowerCase();
+
+    if (senderOwner != null && senderOwner.isNotEmpty) {
+      return senderOwner;
+    }
+
+    if (owner != null &&
+        owner.isNotEmpty &&
+        device != null &&
+        device.isNotEmpty &&
+        senderDevice == device) {
+      return owner;
+    }
+
+    return senderDevice;
   }
 
   Future<void> _refreshGroupOuterSubscription() async {
