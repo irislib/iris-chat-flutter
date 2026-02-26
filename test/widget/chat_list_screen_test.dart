@@ -115,10 +115,25 @@ void main() {
     Map<String, bool>? relayConnectionStatus,
     ConnectivityStatus connectivityStatus = ConnectivityStatus.online,
     bool throwOnMessageSubscriptionInit = false,
+    int failSessionLoadsBeforeSuccess = 0,
+    int failGroupLoadsBeforeSuccess = 0,
   }) {
-    when(
-      () => mockSessionDatasource.getAllSessions(),
-    ).thenAnswer((_) async => sessions);
+    var sessionLoadAttempts = 0;
+    when(() => mockSessionDatasource.getAllSessions()).thenAnswer((_) async {
+      if (sessionLoadAttempts < failSessionLoadsBeforeSuccess) {
+        sessionLoadAttempts++;
+        throw Exception('database is locked');
+      }
+      return sessions;
+    });
+    var groupLoadAttempts = 0;
+    when(() => mockGroupDatasource.getAllGroups()).thenAnswer((_) async {
+      if (groupLoadAttempts < failGroupLoadsBeforeSuccess) {
+        groupLoadAttempts++;
+        throw Exception('database is locked');
+      }
+      return [];
+    });
     when(
       () => mockSessionDatasource.getSessionState(any()),
     ).thenAnswer((_) async => null);
@@ -350,6 +365,29 @@ void main() {
           expect(find.text('New Chat'), findsOneWidget);
         },
       );
+
+      testWidgets('retries loading sessions after transient startup failure', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildChatListScreen(
+            sessions: [
+              ChatSession(
+                id: 'session-1',
+                recipientPubkeyHex: 'abcd1234567890abcd1234567890abcd',
+                recipientName: 'Alice',
+                createdAt: DateTime.now(),
+              ),
+            ],
+            failSessionLoadsBeforeSuccess: 1,
+          ),
+        );
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Alice'), findsOneWidget);
+        expect(find.text('New Chat'), findsNothing);
+      });
     });
 
     group('session list', () {

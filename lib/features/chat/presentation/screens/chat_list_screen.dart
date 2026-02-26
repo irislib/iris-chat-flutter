@@ -27,14 +27,38 @@ class ChatListScreen extends ConsumerStatefulWidget {
 class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   bool _initialLoadDone = false;
   bool _redirected = false;
+  static const int _kInitialLoadMaxAttempts = 3;
+  static const Duration _kInitialLoadRetryDelay = Duration(milliseconds: 250);
+
+  Future<void> _loadWithRetry({
+    required Future<void> Function() load,
+    required String? Function() readError,
+  }) async {
+    for (var attempt = 0; attempt < _kInitialLoadMaxAttempts; attempt++) {
+      await load();
+      if (readError() == null) return;
+      if (attempt >= _kInitialLoadMaxAttempts - 1) return;
+      await Future<void>.delayed(
+        Duration(
+          milliseconds: _kInitialLoadRetryDelay.inMilliseconds * (attempt + 1),
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        await ref.read(sessionStateProvider.notifier).loadSessions();
-        await ref.read(groupStateProvider.notifier).loadGroups();
+        await _loadWithRetry(
+          load: () => ref.read(sessionStateProvider.notifier).loadSessions(),
+          readError: () => ref.read(sessionStateProvider).error,
+        );
+        await _loadWithRetry(
+          load: () => ref.read(groupStateProvider.notifier).loadGroups(),
+          readError: () => ref.read(groupStateProvider).error,
+        );
         await ref.read(inviteStateProvider.notifier).loadInvites();
         // Best-effort start message subscription.
         try {
@@ -59,6 +83,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     final groupsLoading = ref.watch(
       groupStateProvider.select((s) => s.isLoading),
     );
+    final sessionsError = ref.watch(
+      sessionStateProvider.select((s) => s.error),
+    );
+    final groupsError = ref.watch(groupStateProvider.select((s) => s.error));
     final sessions = ref.watch(sessionStateProvider.select((s) => s.sessions));
     final groups = ref.watch(groupStateProvider.select((s) => s.groups));
     // Don't block showing existing sessions while group metadata is still loading.
@@ -71,6 +99,8 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
     if (_initialLoadDone &&
         !sessionsLoading &&
         !groupsLoading &&
+        sessionsError == null &&
+        groupsError == null &&
         sessions.isEmpty &&
         groups.isEmpty &&
         !_redirected) {
