@@ -130,10 +130,7 @@ void main() {
       });
 
       test('toJson includes p tags correctly', () {
-        const filter = NostrFilter(
-          pTags: ['pubkey1', 'pubkey2'],
-          kinds: [443],
-        );
+        const filter = NostrFilter(pTags: ['pubkey1', 'pubkey2'], kinds: [443]);
 
         final json = filter.toJson();
 
@@ -142,10 +139,7 @@ void main() {
       });
 
       test('toJson includes e tags correctly', () {
-        const filter = NostrFilter(
-          eTags: ['event1'],
-          limit: 10,
-        );
+        const filter = NostrFilter(eTags: ['event1'], limit: 10);
 
         final json = filter.toJson();
 
@@ -155,6 +149,21 @@ void main() {
     });
 
     group('NostrService instance', () {
+      test(
+        'default relays exclude nos.lol and include temp/offchain relays',
+        () {
+          expect(NostrService.defaultRelays.contains('wss://nos.lol'), isFalse);
+          expect(
+            NostrService.defaultRelays.contains('wss://temp.iris.to'),
+            isTrue,
+          );
+          expect(
+            NostrService.defaultRelays.contains('wss://offchain.pub'),
+            isTrue,
+          );
+        },
+      );
+
       test('creates with default relays', () {
         final service = NostrService();
 
@@ -221,10 +230,7 @@ void main() {
         final service = NostrService(relayUrls: ['wss://relay.test']);
         await service.dispose();
 
-        expect(
-          () => service.publishEvent('{}'),
-          throwsStateError,
-        );
+        expect(() => service.publishEvent('{}'), throwsStateError);
       });
 
       test(

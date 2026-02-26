@@ -44,7 +44,8 @@ class NostrService {
   static const defaultRelays = [
     'wss://relay.damus.io',
     'wss://relay.snort.social',
-    'wss://nos.lol',
+    'wss://temp.iris.to',
+    'wss://offchain.pub',
     'wss://relay.primal.net',
   ];
 
@@ -74,6 +75,8 @@ class NostrService {
       );
 
       final channel = WebSocketChannel.connect(Uri.parse(url));
+      await channel.ready;
+
       _connections[url] = channel;
       _reconnectAttempts[url] = 0;
       _activeSubscriptions[url] = {};
