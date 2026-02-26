@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../../config/providers/invite_provider.dart';
+import '../../../chat/presentation/widgets/chats_back_button.dart';
 
 class CreateInviteScreen extends ConsumerStatefulWidget {
   const CreateInviteScreen({super.key});
@@ -86,7 +87,10 @@ class _CreateInviteScreenState extends ConsumerState<CreateInviteScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Invite')),
+      appBar: AppBar(
+        leading: const ChatsBackButton(),
+        title: const Text('Create Invite'),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(

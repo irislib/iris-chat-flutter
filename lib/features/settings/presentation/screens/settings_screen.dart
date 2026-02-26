@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,12 +11,19 @@ import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/desktop_notification_provider.dart';
 import '../../../../config/providers/device_manager_provider.dart';
+import '../../../../config/providers/imgproxy_settings_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
 import '../../../../config/providers/messaging_preferences_provider.dart';
 import '../../../../config/providers/mobile_push_provider.dart';
+import '../../../../config/providers/nostr_provider.dart';
+import '../../../../config/providers/nostr_relay_settings_provider.dart';
 import '../../../../config/providers/startup_launch_provider.dart';
+import '../../../../core/services/imgproxy_service.dart';
+import '../../../../core/services/nostr_relay_settings_service.dart';
+import '../../../../core/services/profile_service.dart';
 import '../../../../core/services/secure_storage_service.dart';
 import '../../../../shared/utils/formatters.dart';
+import '../../../chat/presentation/widgets/chats_back_button.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -25,17 +34,30 @@ class SettingsScreen extends ConsumerWidget {
     final deviceState = ref.watch(deviceManagerProvider);
     final startupLaunchState = ref.watch(startupLaunchProvider);
     final messagingPreferences = ref.watch(messagingPreferencesProvider);
+    final imgproxySettings = ref.watch(imgproxySettingsProvider);
+    final relaySettings = ref.watch(nostrRelaySettingsProvider);
+    final relayConnectionStatus =
+        ref.watch(nostrConnectionStatusProvider).valueOrNull ??
+        const <String, bool>{};
     final desktopNotificationsSupported = ref.watch(
       desktopNotificationsSupportedProvider,
     );
     final mobilePushSupported = ref.watch(mobilePushSupportedProvider);
+    ref.watch(profileUpdatesProvider);
+    final profileService = ref.watch(profileServiceProvider);
+    final ownProfile = authState.pubkeyHex == null
+        ? null
+        : profileService.getCachedProfile(authState.pubkeyHex!);
     final npub = authState.pubkeyHex != null
         ? formatPubkeyAsNpub(authState.pubkeyHex!)
         : null;
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        leading: const ChatsBackButton(),
+        title: const Text('Settings'),
+      ),
       body: ListView(
         children: [
           // Identity section
@@ -60,6 +82,22 @@ class SettingsScreen extends ConsumerWidget {
                   )
                 : null,
           ),
+          if (authState.pubkeyHex != null)
+            ListTile(
+              leading: const Icon(Icons.badge),
+              title: const Text('Profile'),
+              subtitle: Text(
+                authState.isLinkedDevice
+                    ? 'Linked devices cannot edit owner profile'
+                    : _profileSummary(ownProfile),
+              ),
+              onTap: () => _showEditProfileDialog(
+                context,
+                ref,
+                ownerPubkeyHex: authState.pubkeyHex!,
+                isLinkedDevice: authState.isLinkedDevice,
+              ),
+            ),
 
           // Devices section
           const _SectionHeader(title: 'Devices'),
@@ -158,6 +196,7 @@ class SettingsScreen extends ConsumerWidget {
           // Security section
           const _SectionHeader(title: 'Security'),
           ListTile(
+            key: const ValueKey('settings_export_private_key'),
             leading: const Icon(Icons.key),
             title: const Text('Export Private Key'),
             subtitle: const Text('Backup your key securely'),
@@ -238,6 +277,95 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
 
+          // Media section
+          const _SectionHeader(title: 'Media'),
+          SwitchListTile(
+            key: const ValueKey('settings_imgproxy_enabled'),
+            secondary: const Icon(Icons.image),
+            title: const Text('Load Avatars via Image Proxy'),
+            subtitle: const Text(
+              'Route profile pictures through imgproxy before loading',
+            ),
+            value: imgproxySettings.enabled,
+            onChanged: imgproxySettings.isLoading
+                ? null
+                : (value) => ref
+                      .read(imgproxySettingsProvider.notifier)
+                      .setEnabled(value),
+          ),
+          ListTile(
+            key: const ValueKey('settings_imgproxy_url'),
+            leading: const Icon(Icons.link),
+            title: const Text('Image Proxy URL'),
+            subtitle: Text(_ellipsizeMiddle(imgproxySettings.url)),
+            onTap: imgproxySettings.isLoading
+                ? null
+                : () => _editImgproxyValue(
+                    context,
+                    ref,
+                    title: 'Image Proxy URL',
+                    initialValue: imgproxySettings.url,
+                    hintText: ImgproxyConfig.defaultUrl,
+                    onSave: (value) => ref
+                        .read(imgproxySettingsProvider.notifier)
+                        .setUrl(value),
+                  ),
+          ),
+          ListTile(
+            key: const ValueKey('settings_imgproxy_key'),
+            leading: const Icon(Icons.key),
+            title: const Text('Image Proxy Key'),
+            subtitle: Text(_maskHex(imgproxySettings.keyHex)),
+            onTap: imgproxySettings.isLoading
+                ? null
+                : () => _editImgproxyValue(
+                    context,
+                    ref,
+                    title: 'Image Proxy Key (Hex)',
+                    initialValue: imgproxySettings.keyHex,
+                    hintText: ImgproxyConfig.defaultKeyHex,
+                    onSave: (value) => ref
+                        .read(imgproxySettingsProvider.notifier)
+                        .setKeyHex(value),
+                  ),
+          ),
+          ListTile(
+            key: const ValueKey('settings_imgproxy_salt'),
+            leading: const Icon(Icons.safety_check),
+            title: const Text('Image Proxy Salt'),
+            subtitle: Text(_maskHex(imgproxySettings.saltHex)),
+            onTap: imgproxySettings.isLoading
+                ? null
+                : () => _editImgproxyValue(
+                    context,
+                    ref,
+                    title: 'Image Proxy Salt (Hex)',
+                    initialValue: imgproxySettings.saltHex,
+                    hintText: ImgproxyConfig.defaultSaltHex,
+                    onSave: (value) => ref
+                        .read(imgproxySettingsProvider.notifier)
+                        .setSaltHex(value),
+                  ),
+          ),
+          ListTile(
+            key: const ValueKey('settings_imgproxy_reset'),
+            leading: const Icon(Icons.restore),
+            title: const Text('Reset Image Proxy Defaults'),
+            onTap: imgproxySettings.isLoading
+                ? null
+                : () => ref
+                      .read(imgproxySettingsProvider.notifier)
+                      .resetDefaults(),
+          ),
+          if (imgproxySettings.error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                imgproxySettings.error!,
+                style: TextStyle(color: theme.colorScheme.error, fontSize: 12),
+              ),
+            ),
+
           // Application section
           if (startupLaunchState.isLoading || startupLaunchState.isSupported)
             const _SectionHeader(title: 'Application'),
@@ -263,6 +391,82 @@ class SettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 startupLaunchState.error!,
+                style: TextStyle(color: theme.colorScheme.error, fontSize: 12),
+              ),
+            ),
+
+          // Nostr relays section
+          const _SectionHeader(title: 'Nostr Relays'),
+          ListTile(
+            leading: const Icon(Icons.add_link),
+            title: const Text('Add Relay'),
+            subtitle: const Text('Add a ws:// or wss:// relay endpoint'),
+            onTap: relaySettings.isLoading
+                ? null
+                : () => _showAddRelayDialog(context, ref),
+          ),
+          if (relaySettings.isLoading)
+            const ListTile(
+              leading: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              title: Text('Updating relay settings...'),
+            ),
+          if (!relaySettings.isLoading)
+            ...relaySettings.relays.map((relayUrl) {
+              final canDelete = relaySettings.relays.length > 1;
+              final isConnected = relayConnectionStatus[relayUrl];
+              return ListTile(
+                leading: const Icon(Icons.hub),
+                title: Text(relayUrl),
+                subtitle: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      key: ValueKey('relay-status-dot-$relayUrl'),
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _relayStatusColor(isConnected),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(_relayStatusLabel(isConnected)),
+                  ],
+                ),
+                trailing: SizedBox(
+                  width: 96,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        tooltip: 'Edit relay',
+                        onPressed: () =>
+                            _showEditRelayDialog(context, ref, relayUrl),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: canDelete
+                            ? 'Delete relay'
+                            : 'At least one relay is required',
+                        onPressed: canDelete
+                            ? () => _confirmDeleteRelay(context, ref, relayUrl)
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          if (relaySettings.error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                relaySettings.error!,
                 style: TextStyle(color: theme.colorScheme.error, fontSize: 12),
               ),
             ),
@@ -389,6 +593,281 @@ class SettingsScreen extends ConsumerWidget {
     return privateKey;
   }
 
+  String _profileSummary(NostrProfile? profile) {
+    if (profile == null) return 'No profile metadata published';
+
+    final name = profile.bestName;
+    final picture = profile.picture?.trim();
+    final hasPicture = picture != null && picture.isNotEmpty;
+
+    if (name != null && hasPicture) {
+      return '$name • Picture set';
+    }
+    if (name != null) return name;
+    if (hasPicture) return 'Picture set';
+    return 'No profile metadata published';
+  }
+
+  String _ellipsizeMiddle(String value, {int head = 22, int tail = 16}) {
+    final normalized = value.trim();
+    if (normalized.length <= head + tail + 3) {
+      return normalized;
+    }
+    return '${normalized.substring(0, head)}...${normalized.substring(normalized.length - tail)}';
+  }
+
+  String _maskHex(String value) {
+    final normalized = value.trim();
+    if (normalized.isEmpty) return '(empty)';
+    return _ellipsizeMiddle(normalized, head: 10, tail: 8);
+  }
+
+  String _relayStatusLabel(bool? isConnected) {
+    if (isConnected ?? false) return 'Connected';
+    if (isConnected == false) return 'Disconnected';
+    return 'Connecting';
+  }
+
+  Color _relayStatusColor(bool? isConnected) {
+    if (isConnected ?? false) return Colors.green;
+    if (isConnected == false) return Colors.grey;
+    return Colors.orange;
+  }
+
+  Future<void> _editImgproxyValue(
+    BuildContext context,
+    WidgetRef ref, {
+    required String title,
+    required String initialValue,
+    required String hintText,
+    required Future<void> Function(String value) onSave,
+  }) async {
+    final value = await _showEditableValueDialog(
+      context,
+      title: title,
+      initialValue: initialValue,
+      hintText: hintText,
+    );
+    if (value == null) return;
+
+    await onSave(value);
+    if (!context.mounted) return;
+    final error = ref.read(imgproxySettingsProvider).error;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(error ?? '$title updated')));
+  }
+
+  Future<String?> _showEditableValueDialog(
+    BuildContext context, {
+    required String title,
+    required String initialValue,
+    required String hintText,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(hintText: hintText),
+          maxLines: 2,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditProfileDialog(
+    BuildContext context,
+    WidgetRef ref, {
+    required String ownerPubkeyHex,
+    required bool isLinkedDevice,
+  }) async {
+    if (isLinkedDevice) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Profile Editing'),
+          content: const Text(
+            'Linked devices cannot publish profile metadata for the owner key.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final profileService = ref.read(profileServiceProvider);
+    var existingProfile = profileService.getCachedProfile(ownerPubkeyHex);
+    if (existingProfile == null) {
+      try {
+        existingProfile = await profileService.getProfile(ownerPubkeyHex);
+      } catch (_) {}
+    }
+    if (!context.mounted) return;
+
+    final nameController = TextEditingController(
+      text: existingProfile?.bestName ?? '',
+    );
+    final pictureController = TextEditingController(
+      text: existingProfile?.picture?.trim() ?? '',
+    );
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit Profile'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Profile name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: pictureController,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Profile picture URL',
+                  hintText: 'https://example.com/avatar.jpg',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final saved = await _saveProfileMetadata(
+                context,
+                ref,
+                ownerPubkeyHex: ownerPubkeyHex,
+                name: nameController.text,
+                pictureUrl: pictureController.text,
+                existingProfile: existingProfile,
+              );
+              if (saved && dialogContext.mounted) {
+                Navigator.pop(dialogContext);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _saveProfileMetadata(
+    BuildContext context,
+    WidgetRef ref, {
+    required String ownerPubkeyHex,
+    required String name,
+    required String pictureUrl,
+    required NostrProfile? existingProfile,
+  }) async {
+    final authRepo = ref.read(authRepositoryProvider);
+    final privkey = await authRepo.getPrivateKey();
+    if (privkey == null || privkey.trim().isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Private key is unavailable')),
+        );
+      }
+      return false;
+    }
+
+    final trimmedName = name.trim();
+    final trimmedPicture = pictureUrl.trim();
+    if (trimmedPicture.isNotEmpty) {
+      final uri = Uri.tryParse(trimmedPicture);
+      if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profile picture URL is invalid')),
+          );
+        }
+        return false;
+      }
+    }
+
+    final content = <String, dynamic>{};
+    if (trimmedName.isNotEmpty) {
+      content['name'] = trimmedName;
+      content['display_name'] = trimmedName;
+    }
+    if (trimmedPicture.isNotEmpty) {
+      content['picture'] = trimmedPicture;
+    }
+    final about = existingProfile?.about?.trim();
+    if (about != null && about.isNotEmpty) {
+      content['about'] = about;
+    }
+    final nip05 = existingProfile?.nip05?.trim();
+    if (nip05 != null && nip05.isNotEmpty) {
+      content['nip05'] = nip05;
+    }
+
+    try {
+      final event = nostr.Event.from(
+        kind: 0,
+        tags: const [],
+        content: jsonEncode(content),
+        privkey: privkey,
+        verify: false,
+      );
+      await ref
+          .read(nostrServiceProvider)
+          .publishEvent(jsonEncode(event.toJson()));
+      ref
+          .read(profileServiceProvider)
+          .upsertProfile(
+            pubkey: ownerPubkeyHex,
+            name: trimmedName.isNotEmpty ? trimmedName : null,
+            displayName: trimmedName.isNotEmpty ? trimmedName : null,
+            picture: trimmedPicture.isNotEmpty ? trimmedPicture : null,
+            about: about,
+            nip05: nip05,
+            updatedAt: DateTime.now(),
+          );
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Profile updated')));
+      }
+      return true;
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update profile: $e')));
+      }
+      return false;
+    }
+  }
+
   Future<void> _registerCurrentDevice(
     BuildContext context,
     WidgetRef ref,
@@ -461,6 +940,153 @@ class SettingsScreen extends ConsumerWidget {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(error ?? 'Failed to remove device')));
+  }
+
+  Future<void> _showAddRelayDialog(BuildContext context, WidgetRef ref) async {
+    final relayUrl = await _showRelayUrlDialog(
+      context,
+      title: 'Add Relay',
+      actionLabel: 'Add',
+    );
+    if (relayUrl == null) return;
+
+    await ref.read(nostrRelaySettingsProvider.notifier).addRelay(relayUrl);
+    if (!context.mounted) return;
+    _showRelayUpdateFeedback(context, ref, successMessage: 'Relay added');
+  }
+
+  Future<void> _showEditRelayDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String relayUrl,
+  ) async {
+    final updatedRelayUrl = await _showRelayUrlDialog(
+      context,
+      title: 'Edit Relay',
+      actionLabel: 'Save',
+      initialValue: relayUrl,
+    );
+    if (updatedRelayUrl == null) return;
+
+    await ref
+        .read(nostrRelaySettingsProvider.notifier)
+        .updateRelay(relayUrl, updatedRelayUrl);
+    if (!context.mounted) return;
+    _showRelayUpdateFeedback(context, ref, successMessage: 'Relay updated');
+  }
+
+  Future<void> _confirmDeleteRelay(
+    BuildContext context,
+    WidgetRef ref,
+    String relayUrl,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Relay?'),
+        content: Text('Stop connecting to $relayUrl?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await ref.read(nostrRelaySettingsProvider.notifier).removeRelay(relayUrl);
+    if (!context.mounted) return;
+    _showRelayUpdateFeedback(context, ref, successMessage: 'Relay deleted');
+  }
+
+  Future<String?> _showRelayUrlDialog(
+    BuildContext context, {
+    required String title,
+    required String actionLabel,
+    String? initialValue,
+  }) async {
+    var currentValue = initialValue ?? '';
+    String? validationError;
+
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text(title),
+            content: TextFormField(
+              initialValue: currentValue,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                hintText: 'wss://relay.example.com',
+                errorText: validationError,
+              ),
+              onChanged: (value) {
+                currentValue = value;
+                if (validationError != null) {
+                  setState(() => validationError = null);
+                }
+              },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  FocusScope.of(context).unfocus();
+                  Navigator.pop(context);
+                },
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  FocusScope.of(context).unfocus();
+                  final error = _relayUrlValidationError(currentValue);
+                  if (error != null) {
+                    setState(() => validationError = error);
+                    return;
+                  }
+
+                  Navigator.pop(context, normalizeNostrRelayUrl(currentValue));
+                },
+                child: Text(actionLabel),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return value;
+  }
+
+  String? _relayUrlValidationError(String rawUrl) {
+    try {
+      normalizeNostrRelayUrl(rawUrl);
+      return null;
+    } on FormatException catch (e) {
+      return e.message.toString();
+    } catch (_) {
+      return 'Invalid relay URL';
+    }
+  }
+
+  void _showRelayUpdateFeedback(
+    BuildContext context,
+    WidgetRef ref, {
+    required String successMessage,
+  }) {
+    final error = ref.read(nostrRelaySettingsProvider).error;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(error ?? successMessage)));
   }
 
   Future<void> _confirmLogout(BuildContext context, WidgetRef ref) async {

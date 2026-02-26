@@ -168,8 +168,20 @@ void main() {
         expect(find.byIcon(Icons.info_outline), findsOneWidget);
       });
 
-      // Note: back button is automatically added by Scaffold when there's a route to pop
-      // but in widget tests without navigation, it may not appear
+      testWidgets('shows unseen badge on back button when unread exists', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildChatScreen(session: testSession.copyWith(unreadCount: 3)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('chats-back-unseen-badge')),
+          findsOneWidget,
+        );
+        expect(find.text('3'), findsOneWidget);
+      });
     });
 
     group('empty messages state', () {

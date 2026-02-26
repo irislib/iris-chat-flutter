@@ -5,9 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
 import 'package:iris_chat/config/providers/connectivity_provider.dart';
+import 'package:iris_chat/config/providers/imgproxy_settings_provider.dart';
 import 'package:iris_chat/config/providers/invite_provider.dart';
 import 'package:iris_chat/config/providers/nostr_provider.dart';
 import 'package:iris_chat/core/services/connectivity_service.dart';
+import 'package:iris_chat/core/services/imgproxy_settings_service.dart';
 import 'package:iris_chat/core/services/profile_service.dart';
 import 'package:iris_chat/core/services/session_manager_service.dart';
 import 'package:iris_chat/features/chat/data/datasources/group_local_datasource.dart';
@@ -35,6 +37,37 @@ class MockGroupLocalDatasource extends Mock implements GroupLocalDatasource {}
 class MockGroupMessageLocalDatasource extends Mock
     implements GroupMessageLocalDatasource {}
 
+class FakeImgproxySettingsService implements ImgproxySettingsService {
+  const FakeImgproxySettingsService();
+
+  @override
+  Future<ImgproxySettingsSnapshot> load() async {
+    return const ImgproxySettingsSnapshot(
+      enabled: false,
+      url: 'https://imgproxy.iris.to',
+      keyHex:
+          'f66233cb160ea07078ff28099bfa3e3e654bc10aa4a745e12176c433d79b8996',
+      saltHex:
+          '5e608e60945dcd2a787e8465d76ba34149894765061d39287609fb9d776caa0c',
+    );
+  }
+
+  @override
+  Future<ImgproxySettingsSnapshot> setEnabled(bool value) => load();
+
+  @override
+  Future<ImgproxySettingsSnapshot> setKeyHex(String value) => load();
+
+  @override
+  Future<ImgproxySettingsSnapshot> setSaltHex(String value) => load();
+
+  @override
+  Future<ImgproxySettingsSnapshot> setUrl(String value) => load();
+
+  @override
+  Future<ImgproxySettingsSnapshot> resetDefaults() => load();
+}
+
 void main() {
   late MockSessionLocalDatasource mockSessionDatasource;
   late MockInviteLocalDatasource mockInviteDatasource;
@@ -42,6 +75,7 @@ void main() {
   late MockProfileService mockProfileService;
   late MockGroupLocalDatasource mockGroupDatasource;
   late MockGroupMessageLocalDatasource mockGroupMessageDatasource;
+  const fakeImgproxySettingsService = FakeImgproxySettingsService();
 
   setUp(() {
     mockSessionDatasource = MockSessionLocalDatasource();
@@ -57,6 +91,10 @@ void main() {
     when(
       () => mockProfileService.getProfile(any()),
     ).thenAnswer((_) async => null);
+    when(() => mockProfileService.getCachedProfile(any())).thenReturn(null);
+    when(
+      () => mockProfileService.profileUpdates,
+    ).thenAnswer((_) => const Stream<String>.empty());
     when(() => mockGroupDatasource.getAllGroups()).thenAnswer((_) async => []);
   });
 
@@ -118,6 +156,9 @@ void main() {
           mockGroupMessageDatasource,
         ),
         profileServiceProvider.overrideWithValue(mockProfileService),
+        imgproxySettingsServiceProvider.overrideWithValue(
+          fakeImgproxySettingsService,
+        ),
         connectivityStatusProvider.overrideWith(
           (_) => Stream.value(ConnectivityStatus.online),
         ),
@@ -138,11 +179,11 @@ void main() {
 
   group('ChatListScreen', () {
     group('app bar', () {
-      testWidgets('shows Iris title', (tester) async {
+      testWidgets('shows iris title', (tester) async {
         await tester.pumpWidget(buildChatListScreen());
         await tester.pump();
 
-        expect(find.text('Iris'), findsOneWidget);
+        expect(find.text('iris'), findsOneWidget);
       });
 
       testWidgets('shows settings icon button', (tester) async {
@@ -279,6 +320,33 @@ void main() {
         await tester.pump();
 
         expect(find.text(getAnimalName(pubkey)), findsOneWidget);
+      });
+
+      testWidgets('prefers Nostr profile name when cached profile exists', (
+        tester,
+      ) async {
+        const pubkey =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        when(() => mockProfileService.getCachedProfile(pubkey)).thenReturn(
+          NostrProfile(
+            pubkey: pubkey,
+            displayName: 'Alice From Nostr',
+            updatedAt: DateTime.fromMillisecondsSinceEpoch(1000),
+          ),
+        );
+
+        final sessions = [
+          ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: pubkey,
+            createdAt: DateTime.now(),
+          ),
+        ];
+
+        await tester.pumpWidget(buildChatListScreen(sessions: sessions));
+        await tester.pump();
+
+        expect(find.text('Alice From Nostr'), findsOneWidget);
       });
     });
 

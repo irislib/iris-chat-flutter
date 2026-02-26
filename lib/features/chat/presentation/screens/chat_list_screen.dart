@@ -5,10 +5,14 @@ import 'package:go_router/go_router.dart';
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
 import '../../../../config/providers/nostr_provider.dart';
+import '../../../../core/services/profile_service.dart';
 import '../../../../shared/utils/formatters.dart';
 import '../../domain/models/group.dart';
 import '../../domain/models/session.dart';
+import '../widgets/iris_brand_title.dart';
 import '../widgets/offline_indicator.dart';
+import '../widgets/profile_avatar.dart';
+import '../widgets/unseen_badge.dart';
 
 class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
@@ -38,14 +42,22 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sessionsLoading =
-        ref.watch(sessionStateProvider.select((s) => s.isLoading));
-    final groupsLoading = ref.watch(groupStateProvider.select((s) => s.isLoading));
+    // Rebuild chat list when profile metadata updates (name/avatar changes).
+    ref.watch(profileUpdatesProvider);
+    final profileService = ref.watch(profileServiceProvider);
+    final sessionsLoading = ref.watch(
+      sessionStateProvider.select((s) => s.isLoading),
+    );
+    final groupsLoading = ref.watch(
+      groupStateProvider.select((s) => s.isLoading),
+    );
     final sessions = ref.watch(sessionStateProvider.select((s) => s.sessions));
     final groups = ref.watch(groupStateProvider.select((s) => s.groups));
     // Don't block showing existing sessions while group metadata is still loading.
     final showInitialLoading =
-        (sessionsLoading || groupsLoading) && sessions.isEmpty && groups.isEmpty;
+        (sessionsLoading || groupsLoading) &&
+        sessions.isEmpty &&
+        groups.isEmpty;
 
     // Redirect to new chat if empty (only once after initial load completes)
     if (_initialLoadDone &&
@@ -65,16 +77,12 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Iris'),
+        title: const IrisBrandTitle(),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () => context.push('/chats/new'),
             tooltip: 'New Chat',
-          ),
-          const Padding(
-            padding: EdgeInsets.only(right: 8),
-            child: ConnectionStatusIcon(size: 20),
           ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -88,7 +96,11 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
           Expanded(
             child: showInitialLoading
                 ? const Center(child: CircularProgressIndicator())
-                : _buildChatList(sessions: sessions, groups: groups),
+                : _buildChatList(
+                    sessions: sessions,
+                    groups: groups,
+                    profileService: profileService,
+                  ),
           ),
         ],
       ),
@@ -98,6 +110,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   Widget _buildChatList({
     required List<ChatSession> sessions,
     required List<ChatGroup> groups,
+    required ProfileService profileService,
   }) {
     final threads = <_Thread>[
       ...groups.map(_Thread.group),
@@ -136,16 +149,24 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                 ),
               );
               if (confirmed ?? false) {
-                await ref.read(groupStateProvider.notifier).deleteGroup(group.id);
+                await ref
+                    .read(groupStateProvider.notifier)
+                    .deleteGroup(group.id);
               }
             },
           );
         }
 
         final session = thread.session!;
+        final profile = profileService.getCachedProfile(
+          session.recipientPubkeyHex,
+        );
+        final displayName = profile?.bestName ?? session.displayName;
         return _ChatListItem(
           key: ValueKey(session.id),
           session: session,
+          displayName: displayName,
+          pictureUrl: profile?.picture,
           onTap: () => context.push('/chats/${session.id}'),
           onDelete: () async {
             final confirmed = await showDialog<bool>(
@@ -168,7 +189,9 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
               ),
             );
             if (confirmed ?? false) {
-              await ref.read(sessionStateProvider.notifier).deleteSession(session.id);
+              await ref
+                  .read(sessionStateProvider.notifier)
+                  .deleteSession(session.id);
             }
           },
         );
@@ -209,8 +232,6 @@ class _GroupListItem extends StatelessWidget {
   final VoidCallback onDelete;
 
   static const _dismissiblePadding = EdgeInsets.only(right: 16);
-  static const _unreadBadgePadding = EdgeInsets.symmetric(horizontal: 8, vertical: 2);
-  static const _unreadBadgeBorderRadius = BorderRadius.all(Radius.circular(12));
   static const _unreadSpacing = SizedBox(height: 4);
 
   @override
@@ -238,19 +259,13 @@ class _GroupListItem extends StatelessWidget {
             color: theme.colorScheme.onSecondaryContainer,
           ),
         ),
-        title: Text(
-          group.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(group.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: subtitle != null
             ? Text(
                 subtitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
               )
             : null,
         trailing: Column(
@@ -266,19 +281,7 @@ class _GroupListItem extends StatelessWidget {
               ),
             if (group.unreadCount > 0) ...[
               _unreadSpacing,
-              Container(
-                padding: _unreadBadgePadding,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  borderRadius: _unreadBadgeBorderRadius,
-                ),
-                child: Text(
-                  group.unreadCount.toString(),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onPrimary,
-                  ),
-                ),
-              ),
+              UnseenBadge(count: group.unreadCount),
             ],
           ],
         ),
@@ -292,17 +295,19 @@ class _ChatListItem extends StatelessWidget {
   const _ChatListItem({
     super.key,
     required this.session,
+    required this.displayName,
+    this.pictureUrl,
     required this.onTap,
     required this.onDelete,
   });
 
   final ChatSession session;
+  final String displayName;
+  final String? pictureUrl;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   static const _dismissiblePadding = EdgeInsets.only(right: 16);
-  static const _unreadBadgePadding = EdgeInsets.symmetric(horizontal: 8, vertical: 2);
-  static const _unreadBadgeBorderRadius = BorderRadius.all(Radius.circular(12));
   static const _unreadSpacing = SizedBox(height: 4);
 
   @override
@@ -320,26 +325,20 @@ class _ChatListItem extends StatelessWidget {
       ),
       onDismissed: (_) => onDelete(),
       child: ListTile(
-        leading: CircleAvatar(
+        leading: ProfileAvatar(
+          pubkeyHex: session.recipientPubkeyHex,
+          displayName: displayName,
+          pictureUrl: pictureUrl,
           backgroundColor: theme.colorScheme.primaryContainer,
-          child: Text(
-            session.displayName[0].toUpperCase(),
-            style: TextStyle(color: theme.colorScheme.onPrimaryContainer),
-          ),
+          foregroundTextColor: theme.colorScheme.onPrimaryContainer,
         ),
-        title: Text(
-          session.displayName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: session.lastMessagePreview != null
             ? Text(
                 session.lastMessagePreview!,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
               )
             : null,
         trailing: Column(
@@ -355,19 +354,7 @@ class _ChatListItem extends StatelessWidget {
               ),
             if (session.unreadCount > 0) ...[
               _unreadSpacing,
-              Container(
-                padding: _unreadBadgePadding,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary,
-                  borderRadius: _unreadBadgeBorderRadius,
-                ),
-                child: Text(
-                  session.unreadCount.toString(),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onPrimary,
-                  ),
-                ),
-              ),
+              UnseenBadge(count: session.unreadCount),
             ],
           ],
         ),

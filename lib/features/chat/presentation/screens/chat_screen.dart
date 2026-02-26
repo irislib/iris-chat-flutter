@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/hashtree_attachment_provider.dart';
+import '../../../../config/providers/nostr_provider.dart';
 import '../../../../core/services/hashtree_attachment_service.dart';
 import '../../../../core/utils/hashtree_attachments.dart';
 import '../../../../shared/utils/formatters.dart';
@@ -18,7 +19,9 @@ import '../../domain/utils/chat_settings.dart';
 import '../utils/attachment_upload.dart';
 import '../utils/seen_sync_mixin.dart';
 import '../widgets/chat_message_bubble.dart';
+import '../widgets/chats_back_button.dart';
 import '../widgets/message_input.dart';
+import '../widgets/profile_avatar.dart';
 import '../widgets/typing_dots.dart';
 
 /// Estimated height for a typical message bubble.
@@ -427,6 +430,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(profileUpdatesProvider);
+    final profileService = ref.watch(profileServiceProvider);
     // Optimized: Use select() to only watch the specific session we need,
     // avoiding rebuilds when other sessions change
     final session = ref.watch(
@@ -448,6 +453,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       ),
     );
     _maybeNotifyDisappearingSettingsChange(session.messageTtlSeconds);
+    final profile = profileService.getCachedProfile(session.recipientPubkeyHex);
+    final sessionDisplayName = profile?.bestName ?? session.displayName;
+    final sessionPicture = profile?.picture;
     final timelineEntries = _buildTimelineEntries(messages);
     final messageById = <String, ChatMessage>{};
     for (final message in messages) {
@@ -465,7 +473,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(session.displayName),
+        leading: const ChatsBackButton(),
+        title: Text(sessionDisplayName),
         actions: [
           IconButton(
             icon: const Icon(Icons.timer_outlined),
@@ -474,7 +483,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           ),
           IconButton(
             icon: const Icon(Icons.info_outline),
-            onPressed: () => _showSessionInfo(context, session),
+            onPressed: () => _showSessionInfo(
+              context,
+              session,
+              displayName: sessionDisplayName,
+              pictureUrl: sessionPicture,
+            ),
           ),
         ],
       ),
@@ -652,7 +666,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  void _showSessionInfo(BuildContext context, ChatSession session) {
+  void _showSessionInfo(
+    BuildContext context,
+    ChatSession session, {
+    required String displayName,
+    String? pictureUrl,
+  }) {
     final theme = Theme.of(context);
 
     showModalBottomSheet(
@@ -668,27 +687,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
+                    ProfileAvatar(
+                      pubkeyHex: session.recipientPubkeyHex,
+                      displayName: displayName,
+                      pictureUrl: pictureUrl,
                       radius: 28,
                       backgroundColor: theme.colorScheme.primaryContainer,
-                      child: Text(
-                        session.displayName.isNotEmpty
-                            ? session.displayName[0].toUpperCase()
-                            : '?',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer,
-                        ),
-                      ),
+                      foregroundTextColor: theme.colorScheme.onPrimaryContainer,
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            session.displayName,
-                            style: theme.textTheme.titleLarge,
-                          ),
+                          Text(displayName, style: theme.textTheme.titleLarge),
                           const SizedBox(height: 4),
                           Row(
                             children: [

@@ -17,6 +17,7 @@ import '../../domain/models/message.dart';
 import '../utils/attachment_upload.dart';
 import '../utils/seen_sync_mixin.dart';
 import '../widgets/chat_message_bubble.dart';
+import '../widgets/chats_back_button.dart';
 import '../widgets/message_input.dart';
 import '../widgets/typing_dots.dart';
 
@@ -374,13 +375,17 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
     if (group == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Group')),
+        appBar: AppBar(
+          leading: const ChatsBackButton(),
+          title: const Text('Group'),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
+        leading: const ChatsBackButton(),
         title: Text(group.name),
         actions: [
           IconButton(

@@ -791,6 +791,145 @@ void main() {
       });
 
       test(
+        'marks incoming messages seen when self receipt references them',
+        () async {
+          const ownerPubkey =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+          final incoming = ChatMessage(
+            id: 'in-1',
+            sessionId: session.id,
+            text: 'hello',
+            timestamp: DateTime.now(),
+            direction: MessageDirection.incoming,
+            status: MessageStatus.delivered,
+            rumorId: 'in-1',
+          );
+
+          notifier.state = notifier.state.copyWith(
+            messages: {
+              session.id: [incoming],
+            },
+          );
+
+          when(
+            () => mockSessionManagerService.ownerPubkeyHex,
+          ).thenReturn(ownerPubkey);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(any()),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+          when(
+            () => mockMessageDatasource.updateIncomingStatusByRumorId(
+              'in-1',
+              MessageStatus.seen,
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.recomputeDerivedFieldsFromMessages(
+              session.id,
+            ),
+          ).thenAnswer((_) async {});
+
+          const receiptRumorJson =
+              '{"id":"rcpt-1","pubkey":"$ownerPubkey","created_at":1700000001,"kind":15,"content":"seen","tags":[["p","$peerPubkey"],["e","in-1"]]}';
+
+          await notifier.receiveDecryptedMessage(peerPubkey, receiptRumorJson);
+
+          final updated = notifier.state.messages[session.id];
+          expect(updated, isNotNull);
+          expect(updated![0].status, MessageStatus.seen);
+          verify(
+            () => mockMessageDatasource.updateIncomingStatusByRumorId(
+              'in-1',
+              MessageStatus.seen,
+            ),
+          ).called(1);
+          verify(
+            () => mockSessionDatasource.recomputeDerivedFieldsFromMessages(
+              session.id,
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
+        'treats sender-copy receipts from another client as self receipts',
+        () async {
+          const ownerPubkey =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          const otherClientPubkey =
+              '3333333333333333333333333333333333333333333333333333333333333333';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+          final incoming = ChatMessage(
+            id: 'in-2',
+            sessionId: session.id,
+            text: 'hello',
+            timestamp: DateTime.now(),
+            direction: MessageDirection.incoming,
+            status: MessageStatus.delivered,
+            rumorId: 'in-2',
+          );
+
+          notifier.state = notifier.state.copyWith(
+            messages: {
+              session.id: [incoming],
+            },
+          );
+
+          when(
+            () => mockSessionManagerService.ownerPubkeyHex,
+          ).thenReturn(ownerPubkey);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(any()),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+          when(
+            () => mockMessageDatasource.updateIncomingStatusByRumorId(
+              'in-2',
+              MessageStatus.seen,
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.recomputeDerivedFieldsFromMessages(
+              session.id,
+            ),
+          ).thenAnswer((_) async {});
+
+          const receiptRumorJson =
+              '{"id":"rcpt-2","pubkey":"$otherClientPubkey","created_at":1700000002,"kind":15,"content":"seen","tags":[["p","$peerPubkey"],["e","in-2"]]}';
+
+          await notifier.receiveDecryptedMessage(peerPubkey, receiptRumorJson);
+
+          final updated = notifier.state.messages[session.id];
+          expect(updated, isNotNull);
+          expect(updated![0].status, MessageStatus.seen);
+          verify(
+            () => mockMessageDatasource.updateIncomingStatusByRumorId(
+              'in-2',
+              MessageStatus.seen,
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
         'applies typing when event second matches last message second with ms precision',
         () async {
           const peerPubkey =

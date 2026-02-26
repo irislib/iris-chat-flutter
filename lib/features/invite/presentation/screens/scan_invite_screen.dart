@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
 import '../../../../core/utils/invite_url.dart';
+import '../../../chat/presentation/widgets/chats_back_button.dart';
 
 class ScanInviteScreen extends ConsumerStatefulWidget {
   const ScanInviteScreen({super.key});
@@ -136,6 +137,7 @@ class _ScanInviteScreenState extends ConsumerState<ScanInviteScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: const ChatsBackButton(),
         title: const Text('Scan Invite'),
         actions: [
           TextButton(

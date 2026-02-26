@@ -407,8 +407,53 @@ class ChatNotifier extends StateNotifier<ChatState> {
         };
         if (nextStatus == null) return null;
 
-        for (final id in messageIds) {
-          await _applyOutgoingStatusByRumorId(id, nextStatus);
+        final ownerPubkeyHex = _sessionManagerService.ownerPubkeyHex
+            ?.toLowerCase()
+            .trim();
+        final rumorPubkeyHex = rumor.pubkey.toLowerCase().trim();
+        final senderPubkey = senderPubkeyHex.toLowerCase().trim();
+        final recipientPubkey = peerPubkeyHex.toLowerCase().trim();
+        final pTagPubkey = getFirstTagValue(
+          rumor.tags,
+          'p',
+        )?.toLowerCase().trim();
+
+        final isDirectSelfReceipt =
+            ownerPubkeyHex != null &&
+            ownerPubkeyHex.isNotEmpty &&
+            (rumorPubkeyHex == ownerPubkeyHex ||
+                senderPubkey == ownerPubkeyHex);
+
+        // Sender-copy receipts from another own device can be surfaced through
+        // the peer chat stream. When p-tag points to this chat peer (not us),
+        // treat the receipt as self for cross-device seen sync.
+        final isSenderCopySelfReceipt =
+            ownerPubkeyHex != null &&
+            ownerPubkeyHex.isNotEmpty &&
+            pTagPubkey != null &&
+            pTagPubkey.isNotEmpty &&
+            pTagPubkey != ownerPubkeyHex &&
+            pTagPubkey == recipientPubkey;
+
+        final targetDirection = (isDirectSelfReceipt || isSenderCopySelfReceipt)
+            ? MessageDirection.incoming
+            : MessageDirection.outgoing;
+
+        for (final id in messageIds.toSet()) {
+          await _applyMessageStatusByRumorId(
+            id,
+            nextStatus,
+            direction: targetDirection,
+          );
+        }
+
+        if (targetDirection == MessageDirection.incoming &&
+            nextStatus == MessageStatus.seen) {
+          try {
+            await _sessionDatasource.recomputeDerivedFieldsFromMessages(
+              sessionId,
+            );
+          } catch (_) {}
         }
         return null;
       }
@@ -749,11 +794,22 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(typingStates: next);
   }
 
-  Future<void> _applyOutgoingStatusByRumorId(
+  Future<void> _applyMessageStatusByRumorId(
     String rumorId,
-    MessageStatus nextStatus,
-  ) async {
-    await _messageDatasource.updateOutgoingStatusByRumorId(rumorId, nextStatus);
+    MessageStatus nextStatus, {
+    required MessageDirection direction,
+  }) async {
+    if (direction == MessageDirection.outgoing) {
+      await _messageDatasource.updateOutgoingStatusByRumorId(
+        rumorId,
+        nextStatus,
+      );
+    } else {
+      await _messageDatasource.updateIncomingStatusByRumorId(
+        rumorId,
+        nextStatus,
+      );
+    }
 
     var changed = false;
     final updatedBySession = <String, List<ChatMessage>>{};
@@ -761,7 +817,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     for (final entry in state.messages.entries) {
       final sessionId = entry.key;
       final updated = entry.value.map((m) {
-        if (!m.isOutgoing) return m;
+        if (m.direction != direction) return m;
         if (m.rumorId != rumorId && m.id != rumorId) return m;
         if (!shouldAdvanceStatus(m.status, nextStatus)) return m;
         changed = true;

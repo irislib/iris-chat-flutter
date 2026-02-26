@@ -10,6 +10,8 @@ import '../../../../config/providers/invite_provider.dart';
 import '../../../../core/utils/invite_url.dart';
 import '../../../../shared/utils/formatters.dart';
 import '../../../invite/domain/models/invite.dart';
+import '../widgets/chats_back_button.dart';
+import '../widgets/iris_brand_title.dart';
 import '../widgets/offline_indicator.dart';
 
 class NewChatScreen extends ConsumerStatefulWidget {
@@ -143,19 +145,12 @@ class _NewChatScreenState extends ConsumerState<NewChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Iris'),
+        title: const IrisBrandTitle(),
         leading: hasChats
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.go('/chats'),
-              )
+            ? ChatsBackButton(onPressed: () => context.go('/chats'))
             : null,
         automaticallyImplyLeading: false,
         actions: [
-          const Padding(
-            padding: EdgeInsets.only(right: 8),
-            child: ConnectionStatusIcon(size: 20),
-          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push('/settings'),

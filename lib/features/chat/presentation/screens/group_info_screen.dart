@@ -7,6 +7,7 @@ import '../../../../config/providers/chat_provider.dart';
 import '../../../../shared/utils/formatters.dart';
 import '../../domain/models/group.dart';
 import '../../domain/models/session.dart';
+import '../widgets/chats_back_button.dart';
 
 class GroupInfoScreen extends ConsumerStatefulWidget {
   const GroupInfoScreen({super.key, required this.groupId});
@@ -20,6 +21,15 @@ class GroupInfoScreen extends ConsumerStatefulWidget {
 class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   final Set<String> _selectedToAdd = <String>{};
 
+  bool _containsPubkey(List<String> pubkeys, String? target) {
+    final normalized = target?.toLowerCase().trim();
+    if (normalized == null || normalized.isEmpty) return false;
+    for (final pubkey in pubkeys) {
+      if (pubkey.toLowerCase().trim() == normalized) return true;
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -30,46 +40,48 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _showRenameDialog(ChatGroup group) async {
-    final controller = TextEditingController(text: group.name);
-    try {
-      final result = await showDialog<String?>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Rename Group'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Group name',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (value) => Navigator.of(context).pop(value),
+    var pendingName = group.name;
+
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename Group'),
+        content: TextFormField(
+          initialValue: group.name,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Group name',
+            border: OutlineInputBorder(),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(controller.text),
-              child: const Text('Save'),
-            ),
-          ],
+          onChanged: (value) => pendingName = value,
+          onFieldSubmitted: (value) => Navigator.of(context).pop(value),
         ),
-      );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(pendingName),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
 
-      final next = result?.trim();
-      if (next == null || next.isEmpty) return;
+    final next = result?.trim();
+    if (next == null || next.isEmpty) return;
 
-      await ref.read(groupStateProvider.notifier).renameGroup(widget.groupId, next);
-      if (!mounted) return;
+    await ref
+        .read(groupStateProvider.notifier)
+        .renameGroup(widget.groupId, next);
+    if (!mounted) return;
 
-      final error = ref.read(groupStateProvider).error;
-      if (error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
-      }
-    } finally {
-      controller.dispose();
+    final error = ref.read(groupStateProvider).error;
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
     }
   }
 
@@ -80,22 +92,33 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final toAdd = _selectedToAdd.toList();
     if (toAdd.isEmpty) return;
 
-    await ref.read(groupStateProvider.notifier).addGroupMembers(widget.groupId, toAdd);
+    await ref
+        .read(groupStateProvider.notifier)
+        .addGroupMembers(widget.groupId, toAdd);
     if (!mounted) return;
 
     setState(_selectedToAdd.clear);
 
     final error = ref.read(groupStateProvider).error;
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added ${toAdd.length} member${toAdd.length == 1 ? '' : 's'}')),
+      SnackBar(
+        content: Text(
+          'Added ${toAdd.length} member${toAdd.length == 1 ? '' : 's'}',
+        ),
+      ),
     );
   }
 
-  Future<void> _confirmRemoveMember(ChatGroup group, String memberPubkeyHex) async {
+  Future<void> _confirmRemoveMember(
+    ChatGroup group,
+    String memberPubkeyHex,
+  ) async {
     final short = formatPubkeyForDisplay(memberPubkeyHex);
     final ok = await showDialog<bool>(
       context: context,
@@ -123,7 +146,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
     final error = ref.read(groupStateProvider).error;
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
     }
   }
 
@@ -141,37 +166,35 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
     if (group == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Group Info')),
+        appBar: AppBar(
+          leading: const ChatsBackButton(),
+          title: const Text('Group Info'),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     final authState = ref.watch(authStateProvider);
     final myPubkeyHex = authState.pubkeyHex;
-    final isAdmin =
-        myPubkeyHex != null && myPubkeyHex.isNotEmpty && group.admins.contains(myPubkeyHex);
+    final isAdmin = _containsPubkey(group.admins, myPubkeyHex);
 
     final sessions = ref.watch(sessionStateProvider.select((s) => s.sessions));
-    final candidates = sessions
-        .where((s) => !group.members.contains(s.recipientPubkeyHex))
-        .toList()
-      ..sort(
-        (a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
-      );
+    final candidates =
+        sessions
+            .where((s) => !group.members.contains(s.recipientPubkeyHex))
+            .toList()
+          ..sort(
+            (a, b) => a.displayName.toLowerCase().compareTo(
+              b.displayName.toLowerCase(),
+            ),
+          );
 
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
+        leading: const ChatsBackButton(),
         title: const Text('Group Info'),
-        actions: [
-          if (isAdmin)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () => _showRenameDialog(group),
-              tooltip: 'Rename',
-            ),
-        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -185,11 +208,29 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
+                    'Group Name',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
                     group.name,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (isAdmin) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => _showRenameDialog(group),
+                        icon: const Icon(Icons.drive_file_rename_outline),
+                        label: const Text('Edit Name'),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   _CopyRow(label: 'Group ID', value: group.id),
                 ],
@@ -261,14 +302,18 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                             });
                           },
                           title: Text(s.displayName),
-                          subtitle: Text(formatPubkeyForDisplay(s.recipientPubkeyHex)),
+                          subtitle: Text(
+                            formatPubkeyForDisplay(s.recipientPubkeyHex),
+                          ),
                           dense: true,
                         ),
                     const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
-                        onPressed: _selectedToAdd.isEmpty ? null : _addSelectedMembers,
+                        onPressed: _selectedToAdd.isEmpty
+                            ? null
+                            : _addSelectedMembers,
                         child: const Text('Add Selected'),
                       ),
                     ),
@@ -307,7 +352,9 @@ class _CopyRow extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 value,
-                style: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontFamily: 'monospace',
+                ),
               ),
             ],
           ),
@@ -318,9 +365,9 @@ class _CopyRow extends StatelessWidget {
           onPressed: () async {
             await Clipboard.setData(ClipboardData(text: value));
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Copied')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Copied')));
             }
           },
         ),
@@ -349,7 +396,11 @@ class _MemberTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final me = myPubkeyHex != null && myPubkeyHex!.isNotEmpty && pubkeyHex == myPubkeyHex;
+    final normalizedMe = myPubkeyHex?.toLowerCase().trim();
+    final me =
+        normalizedMe != null &&
+        normalizedMe.isNotEmpty &&
+        pubkeyHex.toLowerCase().trim() == normalizedMe;
 
     ChatSession? session;
     for (final s in sessions) {
@@ -395,9 +446,9 @@ class _MemberTile extends StatelessWidget {
             onPressed: () async {
               await Clipboard.setData(ClipboardData(text: pubkeyHex));
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Copied')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Copied')));
               }
             },
           ),

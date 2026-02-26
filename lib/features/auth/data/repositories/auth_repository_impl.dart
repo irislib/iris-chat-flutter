@@ -117,7 +117,7 @@ class AuthRepositoryImpl implements AuthRepository {
     }
 
     final nsecMatch = RegExp(
-      r'nsec1[0-9a-z]+',
+      'nsec1[0-9a-z]+',
       caseSensitive: false,
     ).firstMatch(candidate);
     final nsecCandidate = nsecMatch?.group(0);

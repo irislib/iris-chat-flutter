@@ -33,9 +33,9 @@ class SessionNotifier extends StateNotifier<SessionState> {
       final sessions = await _sessionDatasource.getAllSessions();
       state = state.copyWith(sessions: sessions, isLoading: false);
 
-      // Fetch profiles for all recipients without names
+      // Fetch profile metadata (names + avatars) for all recipients.
       unawaited(
-        _fetchMissingProfiles(sessions).catchError((error, stackTrace) {}),
+        _fetchRecipientProfiles(sessions).catchError((error, stackTrace) {}),
       );
     } catch (e, st) {
       final appError = AppError.from(e, st);
@@ -43,23 +43,25 @@ class SessionNotifier extends StateNotifier<SessionState> {
     }
   }
 
-  /// Fetch profiles for sessions without recipient names.
-  Future<void> _fetchMissingProfiles(List<ChatSession> sessions) async {
+  /// Fetch profiles for session recipients.
+  Future<void> _fetchRecipientProfiles(List<ChatSession> sessions) async {
     try {
-      final pubkeysToFetch = sessions
-          .where((s) => s.recipientName == null || s.recipientName!.isEmpty)
+      final recipientPubkeys = sessions
           .map((s) => s.recipientPubkeyHex)
+          .where((pubkey) => pubkey.trim().isNotEmpty)
           .toSet()
           .toList();
 
-      if (pubkeysToFetch.isEmpty) return;
+      if (recipientPubkeys.isEmpty) return;
 
       // Fetch profiles in background
-      await _profileService.fetchProfiles(pubkeysToFetch);
+      await _profileService.fetchProfiles(recipientPubkeys);
 
       // Update sessions with profile names
-      for (final pubkey in pubkeysToFetch) {
-        final profile = await _profileService.getProfile(pubkey);
+      for (final pubkey in recipientPubkeys) {
+        final profile =
+            _profileService.getCachedProfile(pubkey) ??
+            await _profileService.getProfile(pubkey);
         if (profile?.bestName != null) {
           await updateRecipientName(pubkey, profile!.bestName!);
         }
@@ -96,6 +98,11 @@ class SessionNotifier extends StateNotifier<SessionState> {
   /// Add a new session.
   Future<void> addSession(ChatSession session) async {
     _upsertSessionInState(session);
+    unawaited(
+      _profileService
+          .fetchProfiles([session.recipientPubkeyHex])
+          .catchError((error, stackTrace) {}),
+    );
     unawaited(() async {
       try {
         await _sessionDatasource.saveSession(session);
@@ -129,6 +136,11 @@ class SessionNotifier extends StateNotifier<SessionState> {
     );
 
     _upsertSessionInState(session);
+    unawaited(() async {
+      try {
+        await _profileService.fetchProfiles([normalized]);
+      } catch (_) {}
+    }());
     unawaited(() async {
       try {
         await _sessionDatasource.insertSessionIfAbsent(session);

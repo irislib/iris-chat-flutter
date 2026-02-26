@@ -7,14 +7,19 @@ import 'package:iris_chat/config/providers/auth_provider.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
 import 'package:iris_chat/config/providers/desktop_notification_provider.dart';
 import 'package:iris_chat/config/providers/device_manager_provider.dart';
+import 'package:iris_chat/config/providers/imgproxy_settings_provider.dart';
 import 'package:iris_chat/config/providers/messaging_preferences_provider.dart';
 import 'package:iris_chat/config/providers/mobile_push_provider.dart';
 import 'package:iris_chat/config/providers/nostr_provider.dart';
+import 'package:iris_chat/config/providers/nostr_relay_settings_provider.dart';
 import 'package:iris_chat/config/providers/startup_launch_provider.dart';
 import 'package:iris_chat/core/ffi/ndr_ffi.dart';
 import 'package:iris_chat/core/services/database_service.dart';
+import 'package:iris_chat/core/services/imgproxy_settings_service.dart';
 import 'package:iris_chat/core/services/messaging_preferences_service.dart';
+import 'package:iris_chat/core/services/nostr_relay_settings_service.dart';
 import 'package:iris_chat/core/services/nostr_service.dart';
+import 'package:iris_chat/core/services/profile_service.dart';
 import 'package:iris_chat/core/services/startup_launch_service.dart';
 import 'package:iris_chat/features/auth/domain/repositories/auth_repository.dart';
 import 'package:iris_chat/features/settings/presentation/screens/settings_screen.dart';
@@ -28,6 +33,8 @@ class MockAuthRepository extends Mock implements AuthRepository {}
 class MockDatabaseService extends Mock implements DatabaseService {}
 
 class MockNostrService extends Mock implements NostrService {}
+
+class MockProfileService extends Mock implements ProfileService {}
 
 class FakeStartupLaunchService implements StartupLaunchService {
   FakeStartupLaunchService({this.supported = true, this.enabled = true});
@@ -126,6 +133,129 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
   }
 }
 
+class FakeImgproxySettingsService implements ImgproxySettingsService {
+  FakeImgproxySettingsService({
+    this.enabled = true,
+    this.url = 'https://imgproxy.iris.to',
+    this.keyHex =
+        'f66233cb160ea07078ff28099bfa3e3e654bc10aa4a745e12176c433d79b8996',
+    this.saltHex =
+        '5e608e60945dcd2a787e8465d76ba34149894765061d39287609fb9d776caa0c',
+  });
+
+  bool enabled;
+  String url;
+  String keyHex;
+  String saltHex;
+
+  int setEnabledCalls = 0;
+  int setUrlCalls = 0;
+  int setKeyCalls = 0;
+  int setSaltCalls = 0;
+  int resetCalls = 0;
+
+  @override
+  Future<ImgproxySettingsSnapshot> load() async {
+    return ImgproxySettingsSnapshot(
+      enabled: enabled,
+      url: url,
+      keyHex: keyHex,
+      saltHex: saltHex,
+    );
+  }
+
+  @override
+  Future<ImgproxySettingsSnapshot> setEnabled(bool value) async {
+    setEnabledCalls += 1;
+    enabled = value;
+    return load();
+  }
+
+  @override
+  Future<ImgproxySettingsSnapshot> setKeyHex(String value) async {
+    setKeyCalls += 1;
+    keyHex = value;
+    return load();
+  }
+
+  @override
+  Future<ImgproxySettingsSnapshot> setSaltHex(String value) async {
+    setSaltCalls += 1;
+    saltHex = value;
+    return load();
+  }
+
+  @override
+  Future<ImgproxySettingsSnapshot> setUrl(String value) async {
+    setUrlCalls += 1;
+    url = value;
+    return load();
+  }
+
+  @override
+  Future<ImgproxySettingsSnapshot> resetDefaults() async {
+    resetCalls += 1;
+    enabled = true;
+    url = 'https://imgproxy.iris.to';
+    keyHex = 'f66233cb160ea07078ff28099bfa3e3e654bc10aa4a745e12176c433d79b8996';
+    saltHex =
+        '5e608e60945dcd2a787e8465d76ba34149894765061d39287609fb9d776caa0c';
+    return load();
+  }
+}
+
+class FakeNostrRelaySettingsService implements NostrRelaySettingsService {
+  FakeNostrRelaySettingsService({List<String>? relayUrls})
+    : _relayUrls = List<String>.from(
+        relayUrls ?? const ['wss://relay.damus.io', 'wss://relay.snort.social'],
+      );
+
+  final List<String> _relayUrls;
+  int addCalls = 0;
+  int updateCalls = 0;
+  int removeCalls = 0;
+  String? lastAddedRelay;
+  String? lastUpdatedOldRelay;
+  String? lastUpdatedNewRelay;
+  String? lastRemovedRelay;
+
+  @override
+  Future<NostrRelaySettingsSnapshot> load() async {
+    return NostrRelaySettingsSnapshot(relayUrls: List<String>.from(_relayUrls));
+  }
+
+  @override
+  Future<NostrRelaySettingsSnapshot> addRelay(String relayUrl) async {
+    addCalls += 1;
+    lastAddedRelay = relayUrl;
+    _relayUrls.add(relayUrl.trim().replaceAll(RegExp(r'/$'), ''));
+    return load();
+  }
+
+  @override
+  Future<NostrRelaySettingsSnapshot> updateRelay(
+    String oldRelayUrl,
+    String newRelayUrl,
+  ) async {
+    updateCalls += 1;
+    lastUpdatedOldRelay = oldRelayUrl;
+    lastUpdatedNewRelay = newRelayUrl;
+    final index = _relayUrls.indexOf(oldRelayUrl);
+    if (index >= 0) {
+      _relayUrls[index] = newRelayUrl.trim().replaceAll(RegExp(r'/$'), '');
+    }
+    return load();
+  }
+
+  @override
+  Future<NostrRelaySettingsSnapshot> removeRelay(String relayUrl) async {
+    removeCalls += 1;
+    lastRemovedRelay = relayUrl;
+    _relayUrls.remove(relayUrl);
+    return load();
+  }
+}
+
 class TestDeviceManagerNotifier extends DeviceManagerNotifier {
   TestDeviceManagerNotifier(
     super.ref,
@@ -165,15 +295,39 @@ void main() {
   late MockAuthRepository mockAuthRepo;
   late MockDatabaseService mockDbService;
   late MockNostrService mockNostrService;
+  late MockProfileService mockProfileService;
   late FakeStartupLaunchService startupLaunchService;
   late FakeMessagingPreferencesService messagingPreferencesService;
+  late FakeImgproxySettingsService imgproxySettingsService;
+  late FakeNostrRelaySettingsService relaySettingsService;
 
   setUp(() {
     mockAuthRepo = MockAuthRepository();
     mockDbService = MockDatabaseService();
     mockNostrService = MockNostrService();
+    mockProfileService = MockProfileService();
     startupLaunchService = FakeStartupLaunchService();
     messagingPreferencesService = FakeMessagingPreferencesService();
+    imgproxySettingsService = FakeImgproxySettingsService();
+    relaySettingsService = FakeNostrRelaySettingsService();
+    when(
+      () => mockProfileService.profileUpdates,
+    ).thenAnswer((_) => const Stream<String>.empty());
+    when(() => mockProfileService.getCachedProfile(any())).thenReturn(null);
+    when(
+      () => mockProfileService.getProfile(any()),
+    ).thenAnswer((_) async => null);
+    when(
+      () => mockProfileService.upsertProfile(
+        pubkey: any(named: 'pubkey'),
+        name: any(named: 'name'),
+        displayName: any(named: 'displayName'),
+        picture: any(named: 'picture'),
+        about: any(named: 'about'),
+        nip05: any(named: 'nip05'),
+        updatedAt: any(named: 'updatedAt'),
+      ),
+    ).thenReturn(null);
   });
 
   Widget buildSettingsScreen({
@@ -181,6 +335,9 @@ void main() {
     bool isAuthenticated = true,
     FakeStartupLaunchService? startupService,
     FakeMessagingPreferencesService? messagingService,
+    FakeImgproxySettingsService? imgproxyService,
+    FakeNostrRelaySettingsService? relayService,
+    Map<String, bool>? relayConnectionStatus,
     bool? desktopNotificationsSupported,
     bool? mobilePushSupported,
     DeviceManagerState? deviceManagerState,
@@ -195,6 +352,12 @@ void main() {
       messagingPreferencesServiceProvider.overrideWithValue(
         messagingService ?? messagingPreferencesService,
       ),
+      imgproxySettingsServiceProvider.overrideWithValue(
+        imgproxyService ?? imgproxySettingsService,
+      ),
+      nostrRelaySettingsServiceProvider.overrideWithValue(
+        relayService ?? relaySettingsService,
+      ),
       authStateProvider.overrideWith((ref) {
         final notifier = AuthNotifier(mockAuthRepo);
         notifier.state = AuthState(
@@ -205,6 +368,10 @@ void main() {
         return notifier;
       }),
       nostrServiceProvider.overrideWithValue(mockNostrService),
+      profileServiceProvider.overrideWithValue(mockProfileService),
+      nostrConnectionStatusProvider.overrideWith(
+        (ref) => Stream.value(relayConnectionStatus ?? const <String, bool>{}),
+      ),
       deviceManagerProvider.overrideWith((ref) {
         final notifier = TestDeviceManagerNotifier(
           ref,
@@ -306,6 +473,125 @@ void main() {
 
         expect(find.byIcon(Icons.person), findsOneWidget);
       });
+
+      testWidgets('opens profile editor dialog', (tester) async {
+        await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Profile'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Edit Profile'), findsOneWidget);
+        expect(find.text('Profile name'), findsOneWidget);
+        expect(find.text('Profile picture URL'), findsOneWidget);
+      });
+
+      testWidgets('publishes profile metadata on save', (tester) async {
+        when(
+          () => mockAuthRepo.getPrivateKey(),
+        ).thenAnswer((_) async => testPrivkeyHex);
+        when(
+          () => mockNostrService.publishEvent(any()),
+        ).thenAnswer((_) async {});
+
+        await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Profile'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField).at(0), 'Alice');
+        await tester.enterText(
+          find.byType(TextField).at(1),
+          'https://example.com/alice.jpg',
+        );
+        await tester.tap(find.widgetWithText(TextButton, 'Save'));
+        await tester.pumpAndSettle();
+
+        verify(() => mockNostrService.publishEvent(any())).called(1);
+      });
+    });
+
+    group('media section', () {
+      testWidgets('shows imgproxy settings controls', (tester) async {
+        await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
+        await tester.pumpAndSettle();
+        final urlTile = find.byKey(
+          const ValueKey('settings_imgproxy_url'),
+          skipOffstage: false,
+        );
+        final saltTile = find.byKey(
+          const ValueKey('settings_imgproxy_salt'),
+          skipOffstage: false,
+        );
+        await tester.dragUntilVisible(
+          urlTile,
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        await tester.dragUntilVisible(
+          saltTile,
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        expect(urlTile, findsOneWidget);
+        expect(saltTile, findsOneWidget);
+      });
+
+      testWidgets('toggles image proxy enabled setting', (tester) async {
+        final service = FakeImgproxySettingsService(enabled: true);
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            imgproxyService: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Load Avatars via Image Proxy'),
+          300,
+          scrollable: find.byType(Scrollable),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.text('Load Avatars via Image Proxy'),
+          warnIfMissed: false,
+        );
+        await tester.pumpAndSettle();
+
+        expect(service.setEnabledCalls, 1);
+        expect(service.enabled, isFalse);
+      });
+
+      testWidgets('edits image proxy URL', (tester) async {
+        final service = FakeImgproxySettingsService();
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            imgproxyService: service,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Image Proxy URL'),
+          300,
+          scrollable: find.byType(Scrollable),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Image Proxy URL'), warnIfMissed: false);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
+
+        await tester.enterText(
+          find.byType(TextField).first,
+          'https://proxy.example.com',
+        );
+        await tester.tap(find.text('Save'));
+        await tester.pumpAndSettle();
+
+        expect(service.setUrlCalls, 1);
+        expect(service.url, 'https://proxy.example.com');
+      });
     });
 
     group('security section', () {
@@ -330,14 +616,20 @@ void main() {
       ) async {
         await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
         await tester.pumpAndSettle();
+        final exportTile = find.byKey(
+          const ValueKey('settings_export_private_key'),
+        );
 
-        await tester.tap(find.text('Export Private Key'));
+        await tester.dragUntilVisible(
+          exportTile,
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(exportTile, warnIfMissed: false);
         await tester.pumpAndSettle();
 
-        expect(
-          find.text('Export Private Key'),
-          findsNWidgets(2),
-        ); // ListTile + Dialog title
+        expect(find.text('Export Private Key'), findsAtLeastNWidgets(1));
         expect(
           find.textContaining('Never share it with anyone'),
           findsOneWidget,
@@ -349,8 +641,17 @@ void main() {
       testWidgets('closes export dialog when Cancel tapped', (tester) async {
         await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
         await tester.pumpAndSettle();
+        final exportTile = find.byKey(
+          const ValueKey('settings_export_private_key'),
+        );
 
-        await tester.tap(find.text('Export Private Key'));
+        await tester.dragUntilVisible(
+          exportTile,
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(exportTile, warnIfMissed: false);
         await tester.pumpAndSettle();
 
         await tester.tap(find.text('Cancel'));
@@ -384,8 +685,17 @@ void main() {
 
         await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
         await tester.pumpAndSettle();
+        final exportTile = find.byKey(
+          const ValueKey('settings_export_private_key'),
+        );
 
-        await tester.tap(find.text('Export Private Key'));
+        await tester.dragUntilVisible(
+          exportTile,
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(exportTile, warnIfMissed: false);
         await tester.pumpAndSettle();
 
         expect(find.text(testPrivkeyHex), findsNothing);
@@ -525,10 +835,13 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.scrollUntilVisible(find.text('Application'), 300);
+        await tester.scrollUntilVisible(
+          find.text('Launch on System Startup'),
+          300,
+        );
         expect(find.text('Application'), findsOneWidget);
         expect(find.text('Launch on System Startup'), findsOneWidget);
-        expect(find.byType(Switch), findsAtLeastNWidgets(4));
+        expect(find.byType(Switch), findsAtLeastNWidgets(1));
       });
 
       testWidgets('hides startup toggle when platform is unsupported', (
@@ -676,6 +989,160 @@ void main() {
       });
     });
 
+    group('nostr relays section', () {
+      testWidgets(
+        'shows relay status indicator for connected and disconnected relays',
+        (tester) async {
+          await tester.pumpWidget(
+            buildSettingsScreen(
+              pubkeyHex: testPubkeyHex,
+              relayService: FakeNostrRelaySettingsService(
+                relayUrls: const ['wss://relay.one', 'wss://relay.two'],
+              ),
+              relayConnectionStatus: const {
+                'wss://relay.one': true,
+                'wss://relay.two': false,
+              },
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          await tester.scrollUntilVisible(find.text('Nostr Relays'), 300);
+          await tester.scrollUntilVisible(find.text('wss://relay.two'), 300);
+
+          expect(find.text('Connected', skipOffstage: false), findsOneWidget);
+          expect(
+            find.text('Disconnected', skipOffstage: false),
+            findsOneWidget,
+          );
+
+          final connectedDot = tester.widget<Container>(
+            find.byKey(
+              const ValueKey('relay-status-dot-wss://relay.one'),
+              skipOffstage: false,
+            ),
+          );
+          final disconnectedDot = tester.widget<Container>(
+            find.byKey(
+              const ValueKey('relay-status-dot-wss://relay.two'),
+              skipOffstage: false,
+            ),
+          );
+
+          expect(
+            (connectedDot.decoration! as BoxDecoration).color,
+            Colors.green,
+          );
+          expect(
+            (disconnectedDot.decoration! as BoxDecoration).color,
+            Colors.grey,
+          );
+        },
+      );
+
+      testWidgets('shows configured relay urls', (tester) async {
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            relayService: FakeNostrRelaySettingsService(
+              relayUrls: const ['wss://relay.one', 'wss://relay.two'],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(find.text('Nostr Relays'), 300);
+
+        expect(find.text('Nostr Relays'), findsOneWidget);
+        expect(
+          find.text('wss://relay.one', skipOffstage: false),
+          findsOneWidget,
+        );
+        expect(
+          find.text('wss://relay.two', skipOffstage: false),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('adds relay through add dialog', (tester) async {
+        final service = FakeNostrRelaySettingsService(
+          relayUrls: const ['wss://relay.one'],
+        );
+        await tester.pumpWidget(
+          buildSettingsScreen(pubkeyHex: testPubkeyHex, relayService: service),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(find.text('Add Relay'), 300);
+        await tester.tap(find.widgetWithText(ListTile, 'Add Relay'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byType(TextFormField),
+          'wss://relay.new.example/',
+        );
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        expect(service.addCalls, 1);
+        expect(service.lastAddedRelay, 'wss://relay.new.example');
+        expect(
+          find.text('wss://relay.new.example', skipOffstage: false),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('edits relay through edit dialog', (tester) async {
+        final service = FakeNostrRelaySettingsService(
+          relayUrls: const ['wss://relay.old'],
+        );
+        await tester.pumpWidget(
+          buildSettingsScreen(pubkeyHex: testPubkeyHex, relayService: service),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(find.text('wss://relay.old'), 300);
+        await tester.tap(find.byTooltip('Edit relay').first);
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byType(TextFormField),
+          'wss://relay.updated',
+        );
+        await tester.tap(find.text('Save'));
+        await tester.pumpAndSettle();
+
+        expect(service.updateCalls, 1);
+        expect(service.lastUpdatedOldRelay, 'wss://relay.old');
+        expect(service.lastUpdatedNewRelay, 'wss://relay.updated');
+        expect(find.text('wss://relay.updated'), findsOneWidget);
+      });
+
+      testWidgets('deletes relay through delete confirmation', (tester) async {
+        final service = FakeNostrRelaySettingsService(
+          relayUrls: const ['wss://relay.to.delete', 'wss://relay.keep'],
+        );
+        await tester.pumpWidget(
+          buildSettingsScreen(pubkeyHex: testPubkeyHex, relayService: service),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(
+          find.text('wss://relay.to.delete'),
+          300,
+        );
+        await tester.tap(find.byTooltip('Delete relay').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+
+        expect(service.removeCalls, 1);
+        expect(service.lastRemovedRelay, 'wss://relay.to.delete');
+        expect(find.text('wss://relay.to.delete'), findsNothing);
+        expect(find.text('wss://relay.keep'), findsOneWidget);
+      });
+    });
+
     group('danger zone section', () {
       testWidgets('shows Danger Zone section header', (tester) async {
         await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
@@ -792,7 +1259,17 @@ void main() {
               startupLaunchServiceProvider.overrideWithValue(
                 startupLaunchService,
               ),
+              nostrRelaySettingsServiceProvider.overrideWithValue(
+                relaySettingsService,
+              ),
+              imgproxySettingsServiceProvider.overrideWithValue(
+                imgproxySettingsService,
+              ),
+              nostrConnectionStatusProvider.overrideWith(
+                (ref) => Stream.value(const <String, bool>{}),
+              ),
               nostrServiceProvider.overrideWithValue(mockNostrService),
+              profileServiceProvider.overrideWithValue(mockProfileService),
               deviceManagerProvider.overrideWith((ref) {
                 return TestDeviceManagerNotifier(
                   ref,
@@ -818,8 +1295,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.scrollUntilVisible(find.text('Logout'), 300);
-        await tester.tap(find.text('Logout'));
+        final logoutTile = find.widgetWithText(ListTile, 'Logout');
+        await tester.scrollUntilVisible(logoutTile, 300);
+        await tester.tap(logoutTile);
         await tester.pumpAndSettle();
 
         // Tap the Logout button in the dialog (second one)

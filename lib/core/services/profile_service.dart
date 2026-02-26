@@ -11,34 +11,46 @@ class ProfileService {
   final NostrService _nostrService;
   final Map<String, NostrProfile> _cache = {};
   final Map<String, Completer<NostrProfile?>> _pendingRequests = {};
-  String? _subscriptionId;
+  final Map<String, Set<String>> _activeSubscriptions = {};
+  final Map<String, Timer> _subscriptionTimeouts = {};
   StreamSubscription<NostrEvent>? _eventSubscription;
+  final StreamController<String> _profileUpdateController =
+      StreamController<String>.broadcast();
+  var _subscriptionSequence = 0;
 
   static const int _metadataKind = 0;
+  static const Duration _fetchTimeout = Duration(seconds: 5);
+
+  /// Emits updated pubkeys whenever profile metadata cache changes.
+  Stream<String> get profileUpdates => _profileUpdateController.stream;
 
   /// Get a profile from cache or fetch from relays.
   Future<NostrProfile?> getProfile(String pubkey) async {
+    final normalizedPubkey = _normalizePubkey(pubkey);
+    if (normalizedPubkey == null) return null;
+
     // Check cache first
-    if (_cache.containsKey(pubkey)) {
-      return _cache[pubkey];
+    if (_cache.containsKey(normalizedPubkey)) {
+      return _cache[normalizedPubkey];
     }
 
     // Check if already fetching
-    if (_pendingRequests.containsKey(pubkey)) {
-      return _pendingRequests[pubkey]!.future;
+    if (_pendingRequests.containsKey(normalizedPubkey)) {
+      return _pendingRequests[normalizedPubkey]!.future;
     }
 
     // Start fetching
     final completer = Completer<NostrProfile?>();
-    _pendingRequests[pubkey] = completer;
-
-    _fetchProfile(pubkey);
+    _pendingRequests[normalizedPubkey] = completer;
+    _fetchProfilesInternal([normalizedPubkey]);
 
     // Timeout after 5 seconds
     return completer.future.timeout(
-      const Duration(seconds: 5),
+      _fetchTimeout,
       onTimeout: () {
-        _pendingRequests.remove(pubkey);
+        if (identical(_pendingRequests[normalizedPubkey], completer)) {
+          _pendingRequests.remove(normalizedPubkey);
+        }
         return null;
       },
     );
@@ -46,47 +58,53 @@ class ProfileService {
 
   /// Fetch profiles for multiple pubkeys.
   Future<void> fetchProfiles(List<String> pubkeys) async {
-    final toFetch = pubkeys.where((pk) => !_cache.containsKey(pk)).toList();
+    final toFetch = <String>{};
+    for (final pubkey in pubkeys) {
+      final normalized = _normalizePubkey(pubkey);
+      if (normalized == null || _cache.containsKey(normalized)) {
+        continue;
+      }
+      toFetch.add(normalized);
+      _pendingRequests.putIfAbsent(
+        normalized,
+        Completer<NostrProfile?>.new,
+      );
+    }
     if (toFetch.isEmpty) return;
 
-    // Cancel existing subscription
-    if (_subscriptionId != null) {
-      _nostrService.closeSubscription(_subscriptionId!);
-    }
-    await _eventSubscription?.cancel();
-
-    // Subscribe to metadata events
-    _eventSubscription = _nostrService.events.listen(_handleEvent);
-
-    _subscriptionId = _nostrService.subscribe(
-      NostrFilter(
-        kinds: [_metadataKind],
-        authors: toFetch,
-        limit: toFetch.length,
-      ),
-    );
+    _fetchProfilesInternal(toFetch.toList(growable: false));
 
     Logger.debug(
       'Fetching profiles',
       category: LogCategory.nostr,
-      data: {'pubkeyCount': toFetch.length},
+      data: {
+        'pubkeyCount': toFetch.length,
+        'activeSubs': _activeSubscriptions.length,
+      },
     );
   }
 
-  void _fetchProfile(String pubkey) {
-    // Cancel existing subscription
-    if (_subscriptionId != null) {
-      _nostrService.closeSubscription(_subscriptionId!);
-    }
+  void _fetchProfilesInternal(List<String> pubkeys) {
+    if (pubkeys.isEmpty) return;
 
-    // Setup listener if not already
     _eventSubscription ??= _nostrService.events.listen(_handleEvent);
 
-    _subscriptionId = _nostrService.subscribe(
+    final subId =
+        'profiles-${DateTime.now().microsecondsSinceEpoch}-${_subscriptionSequence++}';
+    _activeSubscriptions[subId] = pubkeys.toSet();
+    _subscriptionTimeouts[subId]?.cancel();
+    _subscriptionTimeouts[subId] = Timer(_fetchTimeout, () {
+      _closeSubscription(subId);
+    });
+
+    _nostrService.subscribeWithId(
+      subId,
       NostrFilter(
-        kinds: [_metadataKind],
-        authors: [pubkey],
-        limit: 1,
+        kinds: const [_metadataKind],
+        authors: pubkeys,
+        // Allow multiple relays or duplicates to return events; we keep the
+        // newest profile per pubkey in cache.
+        limit: pubkeys.length * 5,
       ),
     );
   }
@@ -95,9 +113,14 @@ class ProfileService {
     if (event.kind != _metadataKind) return;
 
     try {
-      final metadata = jsonDecode(event.content) as Map<String, dynamic>;
+      final normalizedPubkey = _normalizePubkey(event.pubkey);
+      if (normalizedPubkey == null) return;
+
+      final decoded = jsonDecode(event.content);
+      if (decoded is! Map) return;
+      final metadata = Map<String, dynamic>.from(decoded);
       final profile = NostrProfile(
-        pubkey: event.pubkey,
+        pubkey: normalizedPubkey,
         name: metadata['name'] as String?,
         displayName: metadata['display_name'] as String?,
         picture: metadata['picture'] as String?,
@@ -107,47 +130,139 @@ class ProfileService {
       );
 
       // Update cache (keep most recent)
-      final existing = _cache[event.pubkey];
+      final existing = _cache[normalizedPubkey];
       if (existing == null || profile.updatedAt.isAfter(existing.updatedAt)) {
-        _cache[event.pubkey] = profile;
+        _cache[normalizedPubkey] = profile;
+        _profileUpdateController.add(normalizedPubkey);
       }
 
       // Complete pending request
-      final completer = _pendingRequests.remove(event.pubkey);
+      final completer = _pendingRequests.remove(normalizedPubkey);
       if (completer != null && !completer.isCompleted) {
-        completer.complete(_cache[event.pubkey]);
+        completer.complete(_cache[normalizedPubkey]);
+      }
+
+      // Resolve subscription lifecycle for this pubkey.
+      final subId = event.subscriptionId;
+      if (subId != null) {
+        final pending = _activeSubscriptions[subId];
+        if (pending != null) {
+          pending.remove(normalizedPubkey);
+          if (pending.isEmpty) {
+            _closeSubscription(subId);
+          }
+        }
       }
 
       Logger.debug(
         'Profile fetched',
         category: LogCategory.nostr,
         data: {
-          'pubkey': event.pubkey.substring(0, 8),
+          'pubkey': normalizedPubkey.substring(0, 8),
           'name': profile.bestName,
         },
       );
     } catch (e) {
+      final safePubkey = event.pubkey.length >= 8
+          ? event.pubkey.substring(0, 8)
+          : event.pubkey;
       Logger.error(
         'Failed to parse profile',
         category: LogCategory.nostr,
         error: e,
-        data: {'pubkey': event.pubkey.substring(0, 8)},
+        data: {'pubkey': safePubkey},
       );
     }
   }
 
   /// Get cached profile (synchronous).
-  NostrProfile? getCachedProfile(String pubkey) => _cache[pubkey];
+  NostrProfile? getCachedProfile(String pubkey) {
+    final normalized = _normalizePubkey(pubkey);
+    if (normalized == null) return null;
+    return _cache[normalized];
+  }
+
+  /// Upsert a profile directly into cache (e.g. local profile edits).
+  void upsertProfile({
+    required String pubkey,
+    String? name,
+    String? displayName,
+    String? picture,
+    String? about,
+    String? nip05,
+    DateTime? updatedAt,
+  }) {
+    final normalized = _normalizePubkey(pubkey);
+    if (normalized == null) return;
+
+    final profile = NostrProfile(
+      pubkey: normalized,
+      name: name,
+      displayName: displayName,
+      picture: picture,
+      about: about,
+      nip05: nip05,
+      updatedAt: updatedAt ?? DateTime.now(),
+    );
+
+    _cache[normalized] = profile;
+    final completer = _pendingRequests.remove(normalized);
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(profile);
+    }
+    _profileUpdateController.add(normalized);
+  }
 
   /// Clear the cache.
   void clearCache() => _cache.clear();
 
+  void _closeSubscription(String subId) {
+    final unresolvedPubkeys = _activeSubscriptions.remove(subId);
+    if (unresolvedPubkeys == null) return;
+
+    _subscriptionTimeouts.remove(subId)?.cancel();
+    _nostrService.closeSubscription(subId);
+
+    for (final pubkey in unresolvedPubkeys) {
+      if (_cache.containsKey(pubkey)) continue;
+      if (_isPubkeyStillRequested(pubkey)) continue;
+      final completer = _pendingRequests.remove(pubkey);
+      if (completer != null && !completer.isCompleted) {
+        completer.complete(null);
+      }
+    }
+  }
+
+  bool _isPubkeyStillRequested(String pubkey) {
+    for (final pending in _activeSubscriptions.values) {
+      if (pending.contains(pubkey)) return true;
+    }
+    return false;
+  }
+
+  String? _normalizePubkey(String pubkey) {
+    final normalized = pubkey.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+    return normalized;
+  }
+
   /// Dispose of the service.
   Future<void> dispose() async {
-    if (_subscriptionId != null) {
-      _nostrService.closeSubscription(_subscriptionId!);
+    for (final subId in _activeSubscriptions.keys.toList(growable: false)) {
+      _closeSubscription(subId);
     }
+    for (final timer in _subscriptionTimeouts.values) {
+      timer.cancel();
+    }
+    _subscriptionTimeouts.clear();
     await _eventSubscription?.cancel();
+    for (final completer in _pendingRequests.values) {
+      if (!completer.isCompleted) {
+        completer.complete(null);
+      }
+    }
+    await _profileUpdateController.close();
+    _activeSubscriptions.clear();
     _cache.clear();
     _pendingRequests.clear();
   }

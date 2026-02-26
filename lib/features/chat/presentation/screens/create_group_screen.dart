@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../shared/utils/formatters.dart';
+import '../widgets/chats_back_button.dart';
 
 class CreateGroupScreen extends ConsumerStatefulWidget {
   const CreateGroupScreen({super.key});
@@ -31,10 +32,9 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
 
     setState(() => _creating = true);
     try {
-      final groupId = await ref.read(groupStateProvider.notifier).createGroup(
-            name: name,
-            memberPubkeysHex: _selectedMembers.toList(),
-          );
+      final groupId = await ref
+          .read(groupStateProvider.notifier)
+          .createGroup(name: name, memberPubkeysHex: _selectedMembers.toList());
       if (!mounted) return;
 
       if (groupId == null) {
@@ -58,6 +58,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: const ChatsBackButton(),
         title: const Text('New Group'),
       ),
       body: Column(
@@ -78,10 +79,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  'Members',
-                  style: theme.textTheme.titleSmall,
-                ),
+                Text('Members', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
                 Text(
                   'Pick from people you already have chats with.',
@@ -111,22 +109,28 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                     itemCount: sessions.length,
                     itemBuilder: (context, index) {
                       final s = sessions[index];
-                      final selected = _selectedMembers.contains(s.recipientPubkeyHex);
+                      final selected = _selectedMembers.contains(
+                        s.recipientPubkeyHex,
+                      );
                       return CheckboxListTile(
                         value: selected,
                         onChanged: _creating
                             ? null
-                              : (v) {
-                                  setState(() {
+                            : (v) {
+                                setState(() {
                                   if (v ?? false) {
                                     _selectedMembers.add(s.recipientPubkeyHex);
                                   } else {
-                                    _selectedMembers.remove(s.recipientPubkeyHex);
+                                    _selectedMembers.remove(
+                                      s.recipientPubkeyHex,
+                                    );
                                   }
                                 });
                               },
                         title: Text(s.displayName),
-                        subtitle: Text(formatPubkeyForDisplay(s.recipientPubkeyHex)),
+                        subtitle: Text(
+                          formatPubkeyForDisplay(s.recipientPubkeyHex),
+                        ),
                       );
                     },
                   ),
@@ -138,7 +142,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: (_creating || _nameController.text.trim().isEmpty || _selectedMembers.isEmpty)
+                  onPressed:
+                      (_creating ||
+                          _nameController.text.trim().isEmpty ||
+                          _selectedMembers.isEmpty)
                       ? null
                       : _create,
                   child: _creating

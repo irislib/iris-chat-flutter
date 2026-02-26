@@ -18,7 +18,8 @@ import '../test_helpers.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
-class _MockSessionLocalDatasource extends Mock implements SessionLocalDatasource {}
+class _MockSessionLocalDatasource extends Mock
+    implements SessionLocalDatasource {}
 
 class _MockProfileService extends Mock implements ProfileService {}
 
@@ -27,15 +28,16 @@ class _MockGroupLocalDatasource extends Mock implements GroupLocalDatasource {}
 class _MockGroupMessageLocalDatasource extends Mock
     implements GroupMessageLocalDatasource {}
 
-class _MockSessionManagerService extends Mock implements SessionManagerService {}
+class _MockSessionManagerService extends Mock
+    implements SessionManagerService {}
 
 class _TestGroupNotifier extends GroupNotifier {
   _TestGroupNotifier(ChatGroup group)
-      : super(
-          _MockGroupLocalDatasource(),
-          _MockGroupMessageLocalDatasource(),
-          _MockSessionManagerService(),
-        ) {
+    : super(
+        _MockGroupLocalDatasource(),
+        _MockGroupMessageLocalDatasource(),
+        _MockSessionManagerService(),
+      ) {
     state = GroupState(groups: [group], isLoading: false);
   }
 
@@ -61,7 +63,10 @@ class _TestGroupNotifier extends GroupNotifier {
   }
 
   @override
-  Future<void> addGroupMembers(String groupId, List<String> memberPubkeysHex) async {
+  Future<void> addGroupMembers(
+    String groupId,
+    List<String> memberPubkeysHex,
+  ) async {
     addMembersCalls++;
     final next = <ChatGroup>[];
     for (final g in state.groups) {
@@ -86,8 +91,12 @@ class _TestGroupNotifier extends GroupNotifier {
           .map(
             (g) => g.id == groupId
                 ? g.copyWith(
-                    members: g.members.where((m) => m != memberPubkeyHex).toList(),
-                    admins: g.admins.where((a) => a != memberPubkeyHex).toList(),
+                    members: g.members
+                        .where((m) => m != memberPubkeyHex)
+                        .toList(),
+                    admins: g.admins
+                        .where((a) => a != memberPubkeyHex)
+                        .toList(),
                   )
                 : g,
           )
@@ -152,7 +161,9 @@ void main() {
             return notifier;
           }),
           groupStateProvider.overrideWith((ref) {
-            groupNotifier = _TestGroupNotifier(makeGroup(admins: [testPubkeyHex]));
+            groupNotifier = _TestGroupNotifier(
+              makeGroup(admins: [testPubkeyHex]),
+            );
             return groupNotifier;
           }),
         ],
@@ -162,7 +173,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Members'), findsOneWidget);
-    expect(find.byIcon(Icons.edit), findsOneWidget);
+    expect(find.text('Edit Name'), findsOneWidget);
 
     // Existing members are visible.
     expect(find.text(formatPubkeyForDisplay(testPubkeyHex)), findsOneWidget);
@@ -178,11 +189,69 @@ void main() {
     await tester.tap(find.byType(CheckboxListTile));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Add Selected'));
+    final addButton = find.widgetWithText(FilledButton, 'Add Selected');
+    await tester.drag(find.byType(ListView).first, const Offset(0, -220));
+    await tester.pumpAndSettle();
+    await tester.tap(addButton);
     await tester.pumpAndSettle();
 
     expect(groupNotifier.addMembersCalls, 1);
-    expect(find.text(formatPubkeyForDisplay(newMemberPubkeyHex)), findsOneWidget);
+    expect(
+      find.text(formatPubkeyForDisplay(newMemberPubkeyHex)),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('admin can rename group from group info', (tester) async {
+    final mockAuthRepo = _MockAuthRepository();
+    final mockSessions = _MockSessionLocalDatasource();
+    final mockProfiles = _MockProfileService();
+
+    late _TestGroupNotifier groupNotifier;
+
+    await tester.pumpWidget(
+      createTestApp(
+        const GroupInfoScreen(groupId: 'g1'),
+        overrides: [
+          authRepositoryProvider.overrideWithValue(mockAuthRepo),
+          authStateProvider.overrideWith((ref) {
+            final notifier = AuthNotifier(mockAuthRepo);
+            notifier.state = const AuthState(
+              isAuthenticated: true,
+              pubkeyHex: testPubkeyHex,
+              devicePubkeyHex: testPubkeyHex,
+              isInitialized: true,
+            );
+            return notifier;
+          }),
+          sessionStateProvider.overrideWith((ref) {
+            final notifier = SessionNotifier(mockSessions, mockProfiles);
+            notifier.state = const SessionState(sessions: []);
+            return notifier;
+          }),
+          groupStateProvider.overrideWith((ref) {
+            groupNotifier = _TestGroupNotifier(
+              makeGroup(admins: [testPubkeyHex]),
+            );
+            return groupNotifier;
+          }),
+        ],
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Edit Name'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rename Group'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField), 'Renamed Group');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(groupNotifier.renameCalls, 1);
+    expect(find.text('Renamed Group'), findsOneWidget);
   });
 
   testWidgets('non-admin cannot edit group members', (tester) async {
@@ -220,7 +289,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Members'), findsOneWidget);
-    expect(find.byIcon(Icons.edit), findsNothing);
+    expect(find.text('Edit Name'), findsNothing);
     expect(find.byIcon(Icons.remove_circle_outline), findsNothing);
     expect(find.text('Add Members'), findsNothing);
     expect(find.text('Add Selected'), findsNothing);

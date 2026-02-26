@@ -13,10 +13,14 @@ import '../../features/chat/domain/utils/chat_settings.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
 import 'invite_provider.dart';
+import 'nostr_relay_settings_provider.dart';
 
 /// Provider for the Nostr service.
 final nostrServiceProvider = Provider<NostrService>((ref) {
-  final service = NostrService();
+  final relayUrls = ref.watch(
+    nostrRelaySettingsProvider.select((state) => state.relays),
+  );
+  final service = NostrService(relayUrls: relayUrls);
 
   // Connect on creation
   service.connect();
@@ -246,6 +250,7 @@ final messageSubscriptionProvider = Provider<SessionManagerService>((ref) {
   final sub = service.decryptedMessages.listen((message) {
     schedule(() async {
       final rumor = NostrRumor.tryParse(message.content);
+      String? receiptSessionId;
       if (rumor != null) {
         if (rumor.kind == groupSenderKeyDistributionKind) {
           try {
@@ -294,6 +299,19 @@ final messageSubscriptionProvider = Provider<SessionManagerService>((ref) {
           );
           return;
         }
+
+        if (rumor.kind == 15) {
+          final owner = service.ownerPubkeyHex;
+          final peer = owner != null
+              ? resolveRumorPeerPubkey(ownerPubkeyHex: owner, rumor: rumor)
+              : message.senderPubkeyHex;
+          if (peer != null && peer.isNotEmpty) {
+            final session = await ref
+                .read(sessionDatasourceProvider)
+                .getSessionByRecipient(peer);
+            receiptSessionId = session?.id;
+          }
+        }
       }
 
       final chatMessage = await ref
@@ -305,7 +323,14 @@ final messageSubscriptionProvider = Provider<SessionManagerService>((ref) {
             createdAt: message.createdAt,
           );
 
-      if (chatMessage == null) return;
+      if (chatMessage == null) {
+        if (receiptSessionId != null) {
+          await ref
+              .read(sessionStateProvider.notifier)
+              .refreshSession(receiptSessionId);
+        }
+        return;
+      }
 
       final sessionNotifier = ref.read(sessionStateProvider.notifier);
       final session = await sessionNotifier.ensureSessionForRecipient(
@@ -385,4 +410,10 @@ final profileServiceProvider = Provider<ProfileService>((ref) {
   final service = ProfileService(nostrService);
   ref.onDispose(service.dispose);
   return service;
+});
+
+/// Provider that emits pubkeys whenever cached profile metadata updates.
+final profileUpdatesProvider = StreamProvider<String>((ref) {
+  final profileService = ref.watch(profileServiceProvider);
+  return profileService.profileUpdates;
 });
