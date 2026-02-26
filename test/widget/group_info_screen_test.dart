@@ -435,4 +435,62 @@ void main() {
     expect(find.text('Add Members'), findsNothing);
     expect(find.text('Add Selected'), findsNothing);
   });
+
+  testWidgets('non-admin cannot change disappearing messages for group', (
+    tester,
+  ) async {
+    final mockAuthRepo = _MockAuthRepository();
+    final mockSessions = _MockSessionLocalDatasource();
+    final mockProfiles = _MockProfileService();
+
+    late _TestGroupNotifier groupNotifier;
+
+    await tester.pumpWidget(
+      createTestApp(
+        const GroupInfoScreen(groupId: 'g1'),
+        overrides: [
+          authRepositoryProvider.overrideWithValue(mockAuthRepo),
+          authStateProvider.overrideWith((ref) {
+            final notifier = AuthNotifier(mockAuthRepo);
+            notifier.state = const AuthState(
+              isAuthenticated: true,
+              pubkeyHex: testPubkeyHex,
+              devicePubkeyHex: testPubkeyHex,
+              isInitialized: true,
+            );
+            return notifier;
+          }),
+          sessionStateProvider.overrideWith((ref) {
+            final notifier = SessionNotifier(mockSessions, mockProfiles);
+            notifier.state = const SessionState(sessions: []);
+            return notifier;
+          }),
+          groupStateProvider.overrideWith((ref) {
+            groupNotifier = _TestGroupNotifier(
+              makeGroup(admins: [otherPubkeyHex]),
+            );
+            return groupNotifier;
+          }),
+        ],
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Disappearing Messages'),
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(
+      find.text('Only group admins can change this setting.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(ListTile, 'Off').last);
+    await tester.pumpAndSettle();
+
+    expect(groupNotifier.setTtlCalls, 0);
+  });
 }
