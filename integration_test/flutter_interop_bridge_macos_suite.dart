@@ -170,6 +170,49 @@ Future<bool> _waitForMessageText(
   return false;
 }
 
+Future<bool> _waitForGroup(
+  ProviderContainer container, {
+  required String groupId,
+  required Duration timeout,
+}) async {
+  final end = DateTime.now().add(timeout);
+
+  while (DateTime.now().isBefore(end)) {
+    final groups = container.read(groupStateProvider).groups;
+    if (groups.any((g) => g.id == groupId)) {
+      return true;
+    }
+    await Future.delayed(const Duration(milliseconds: 80));
+  }
+
+  return false;
+}
+
+Future<bool> _waitForGroupMessageText(
+  ProviderContainer container, {
+  required String groupId,
+  required String text,
+  required Duration timeout,
+  required bool incomingOnly,
+}) async {
+  final end = DateTime.now().add(timeout);
+
+  while (DateTime.now().isBefore(end)) {
+    final messagesByGroup = container.read(groupStateProvider).messages;
+    final messages = messagesByGroup[groupId] ?? const <dynamic>[];
+
+    for (final message in messages) {
+      if (message.text != text) continue;
+      if (incomingOnly && !message.isIncoming) continue;
+      return true;
+    }
+
+    await Future.delayed(const Duration(milliseconds: 80));
+  }
+
+  return false;
+}
+
 Future<void> _handleCommand({
   required ProviderContainer container,
   required File eventsFile,
@@ -312,6 +355,109 @@ Future<void> _handleCommand({
         }
 
         await ok({'text': text});
+        return;
+
+      case 'create_group':
+        final name = payload['name']?.toString().trim() ?? '';
+        if (name.isEmpty) {
+          throw ArgumentError('create_group requires name');
+        }
+
+        final memberPubkeysRaw = payload['memberPubkeysHex'];
+        final memberPubkeys = <String>[];
+        if (memberPubkeysRaw is List) {
+          for (final value in memberPubkeysRaw) {
+            final pubkey = value.toString().trim().toLowerCase();
+            if (pubkey.isEmpty) continue;
+            memberPubkeys.add(pubkey);
+          }
+        }
+
+        final groupId = await container
+            .read(groupStateProvider.notifier)
+            .createGroup(name: name, memberPubkeysHex: memberPubkeys);
+
+        if (groupId == null || groupId.isEmpty) {
+          final err = container.read(groupStateProvider).error;
+          throw StateError(err ?? 'Failed to create group');
+        }
+
+        await ok({'groupId': groupId});
+        return;
+
+      case 'wait_for_group':
+        final groupId = payload['groupId']?.toString() ?? '';
+        if (groupId.isEmpty) {
+          throw ArgumentError('wait_for_group requires groupId');
+        }
+
+        final timeoutMsRaw = payload['timeoutMs'];
+        final timeoutMs = timeoutMsRaw is num ? timeoutMsRaw.toInt() : 30000;
+        final found = await _waitForGroup(
+          container,
+          groupId: groupId,
+          timeout: Duration(milliseconds: timeoutMs),
+        );
+        if (!found) {
+          throw TimeoutException(
+            'Timed out waiting for group',
+            Duration(milliseconds: timeoutMs),
+          );
+        }
+        await ok({'groupId': groupId});
+        return;
+
+      case 'accept_group':
+        final groupId = payload['groupId']?.toString() ?? '';
+        if (groupId.isEmpty) {
+          throw ArgumentError('accept_group requires groupId');
+        }
+        await container
+            .read(groupStateProvider.notifier)
+            .acceptGroupInvitation(groupId);
+        await ok({'groupId': groupId});
+        return;
+
+      case 'send_group_message':
+        final groupId = payload['groupId']?.toString() ?? '';
+        final text = payload['text']?.toString() ?? '';
+        if (groupId.isEmpty || text.isEmpty) {
+          throw ArgumentError('send_group_message requires groupId and text');
+        }
+        await container
+            .read(groupStateProvider.notifier)
+            .sendGroupMessage(groupId, text);
+        await ok({'groupId': groupId});
+        return;
+
+      case 'wait_for_group_message':
+        final groupId = payload['groupId']?.toString() ?? '';
+        final text = payload['text']?.toString() ?? '';
+        if (groupId.isEmpty || text.isEmpty) {
+          throw ArgumentError(
+            'wait_for_group_message requires groupId and text',
+          );
+        }
+
+        final timeoutMsRaw = payload['timeoutMs'];
+        final timeoutMs = timeoutMsRaw is num ? timeoutMsRaw.toInt() : 30000;
+        final incomingOnly = payload['incomingOnly'] == true;
+
+        final received = await _waitForGroupMessageText(
+          container,
+          groupId: groupId,
+          text: text,
+          timeout: Duration(milliseconds: timeoutMs),
+          incomingOnly: incomingOnly,
+        );
+        if (!received) {
+          throw TimeoutException(
+            'Timed out waiting for group message text',
+            Duration(milliseconds: timeoutMs),
+          );
+        }
+
+        await ok({'groupId': groupId, 'text': text});
         return;
 
       case 'shutdown':
