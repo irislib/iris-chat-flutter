@@ -107,11 +107,13 @@ class GroupNotifier extends StateNotifier<GroupState> {
   }
 
   Future<void> loadGroups() async {
+    if (!mounted) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final groups = await _groupDatasource.getAllGroups().timeout(
         _kLoadTimeout,
       );
+      if (!mounted) return;
       state = state.copyWith(groups: groups, isLoading: false);
       for (final group in groups) {
         try {
@@ -121,6 +123,7 @@ class GroupNotifier extends StateNotifier<GroupState> {
         } catch (_) {}
       }
     } catch (e, st) {
+      if (!mounted) return;
       final appError = AppError.from(e, st);
       state = state.copyWith(isLoading: false, error: appError.message);
     }

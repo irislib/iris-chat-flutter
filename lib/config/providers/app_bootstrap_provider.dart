@@ -116,6 +116,13 @@ class AppBootstrapNotifier extends StateNotifier<AppBootstrapState> {
 
       if (!mounted || runId != _runId) return;
       state = state.copyWith(isLoading: false, isReady: true, clearError: true);
+    } catch (e) {
+      if (!mounted || runId != _runId) return;
+      state = state.copyWith(
+        isLoading: false,
+        isReady: false,
+        error: e.toString(),
+      );
     } finally {
       if (identical(_inFlight, completer.future)) {
         _inFlight = null;

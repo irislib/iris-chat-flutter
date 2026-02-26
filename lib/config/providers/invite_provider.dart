@@ -40,13 +40,16 @@ class InviteNotifier extends StateNotifier<InviteState> {
 
   /// Load all invites from storage.
   Future<void> loadInvites() async {
+    if (!mounted) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final invites = await _datasource.getActiveInvites().timeout(
         _kLoadTimeout,
       );
+      if (!mounted) return;
       state = state.copyWith(invites: invites, isLoading: false);
     } catch (e, st) {
+      if (!mounted) return;
       final appError = AppError.from(e, st);
       state = state.copyWith(isLoading: false, error: appError.message);
     }

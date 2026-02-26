@@ -118,6 +118,22 @@ void main() {
         expect(notifier.state.isLoading, false);
         expect(notifier.state.error, isNotNull);
       });
+
+      test(
+        'does not throw if notifier is disposed during pending load',
+        () async {
+          final completer = Completer<List<ChatSession>>();
+          when(
+            () => mockDatasource.getAllSessions(),
+          ).thenAnswer((_) => completer.future);
+
+          final loadFuture = notifier.loadSessions();
+          notifier.dispose();
+          completer.complete([]);
+
+          await expectLater(loadFuture, completes);
+        },
+      );
     });
 
     group('ensureSessionForRecipient', () {

@@ -119,6 +119,22 @@ void main() {
         expect(notifier.state.isLoading, false);
         expect(notifier.state.error, isNotNull);
       });
+
+      test(
+        'does not throw if notifier is disposed during pending load',
+        () async {
+          final completer = Completer<List<Invite>>();
+          when(
+            () => mockDatasource.getActiveInvites(),
+          ).thenAnswer((_) => completer.future);
+
+          final loadFuture = notifier.loadInvites();
+          notifier.dispose();
+          completer.complete(const <Invite>[]);
+
+          await expectLater(loadFuture, completes);
+        },
+      );
     });
 
     group('deleteInvite', () {

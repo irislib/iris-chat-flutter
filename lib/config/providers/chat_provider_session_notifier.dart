@@ -29,11 +29,13 @@ class SessionNotifier extends StateNotifier<SessionState> {
 
   /// Load all sessions from storage.
   Future<void> loadSessions() async {
+    if (!mounted) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final sessions = await _sessionDatasource.getAllSessions().timeout(
         _kLoadTimeout,
       );
+      if (!mounted) return;
       state = state.copyWith(sessions: sessions, isLoading: false);
 
       // Fetch profile metadata (names + avatars) for all recipients.
@@ -41,6 +43,7 @@ class SessionNotifier extends StateNotifier<SessionState> {
         _fetchRecipientProfiles(sessions).catchError((error, stackTrace) {}),
       );
     } catch (e, st) {
+      if (!mounted) return;
       final appError = AppError.from(e, st);
       state = state.copyWith(isLoading: false, error: appError.message);
     }
