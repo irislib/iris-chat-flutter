@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:iris_chat/config/providers/auth_provider.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
+import 'package:iris_chat/config/providers/login_device_registration_provider.dart';
+import 'package:iris_chat/core/ffi/ndr_ffi.dart';
 import 'package:iris_chat/core/services/database_service.dart';
 import 'package:iris_chat/features/auth/domain/models/identity.dart';
 import 'package:iris_chat/features/auth/domain/repositories/auth_repository.dart';
@@ -14,14 +17,49 @@ class MockAuthRepository extends Mock implements AuthRepository {}
 
 class MockDatabaseService extends Mock implements DatabaseService {}
 
+class MockLoginDeviceRegistrationService extends Mock
+    implements LoginDeviceRegistrationService {}
+
 void main() {
   late MockAuthRepository mockAuthRepo;
   late MockDatabaseService mockDatabaseService;
+  late MockLoginDeviceRegistrationService mockLoginDeviceRegistrationService;
 
   setUp(() {
     mockAuthRepo = MockAuthRepository();
     mockDatabaseService = MockDatabaseService();
+    mockLoginDeviceRegistrationService = MockLoginDeviceRegistrationService();
     when(() => mockDatabaseService.deleteDatabase()).thenAnswer((_) async {});
+    when(
+      () => mockLoginDeviceRegistrationService.buildPreviewFromPrivateKeyNsec(
+        any(),
+      ),
+    ).thenAnswer(
+      (_) async => const LoginDeviceRegistrationPreview(
+        ownerPubkeyHex: testPubkeyHex,
+        ownerPrivkeyHex: testPrivkeyHex,
+        currentDevicePubkeyHex: testPubkeyHex,
+        existingDevices: [],
+        devicesIfRegistered: [
+          FfiDeviceEntry(identityPubkeyHex: testPubkeyHex, createdAt: 1),
+        ],
+        deviceListLoaded: true,
+      ),
+    );
+    when(
+      () => mockLoginDeviceRegistrationService.publishDeviceList(
+        ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
+        ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
+        devices: any(named: 'devices'),
+      ),
+    ).thenAnswer((_) async {});
+    when(
+      () => mockLoginDeviceRegistrationService.publishSingleDevice(
+        ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
+        ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
+        devicePubkeyHex: any(named: 'devicePubkeyHex'),
+      ),
+    ).thenAnswer((_) async {});
   });
 
   Widget buildLoginScreen({AuthState? initialAuthState}) {
@@ -30,11 +68,42 @@ void main() {
       overrides: [
         authRepositoryProvider.overrideWithValue(mockAuthRepo),
         databaseServiceProvider.overrideWithValue(mockDatabaseService),
+        loginDeviceRegistrationServiceProvider.overrideWithValue(
+          mockLoginDeviceRegistrationService,
+        ),
         if (initialAuthState != null)
           authStateProvider.overrideWith((ref) {
             final notifier = AuthNotifier(mockAuthRepo);
             return notifier;
           }),
+      ],
+    );
+  }
+
+  Widget buildLoginScreenRouter() {
+    final router = GoRouter(
+      initialLocation: '/login',
+      routes: [
+        GoRoute(
+          path: '/login',
+          builder: (context, state) => const LoginScreen(),
+        ),
+        GoRoute(
+          path: '/chats',
+          builder: (context, state) =>
+              const Scaffold(body: Text('Chats Screen')),
+        ),
+      ],
+    );
+
+    return createTestRouterApp(
+      router,
+      overrides: [
+        authRepositoryProvider.overrideWithValue(mockAuthRepo),
+        databaseServiceProvider.overrideWithValue(mockDatabaseService),
+        loginDeviceRegistrationServiceProvider.overrideWithValue(
+          mockLoginDeviceRegistrationService,
+        ),
       ],
     );
   }
@@ -171,6 +240,31 @@ void main() {
           ]);
         },
       );
+
+      testWidgets('create identity auto-registers current device', (
+        tester,
+      ) async {
+        when(
+          () => mockAuthRepo.createIdentity(),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+        when(
+          () => mockAuthRepo.getPrivateKey(),
+        ).thenAnswer((_) async => testPrivkeyHex);
+
+        await tester.pumpWidget(buildLoginScreenRouter());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Create New Identity'));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => mockLoginDeviceRegistrationService.publishSingleDevice(
+            ownerPubkeyHex: testPubkeyHex,
+            ownerPrivkeyHex: testPrivkeyHex,
+            devicePubkeyHex: testPubkeyHex,
+          ),
+        ).called(1);
+      });
     });
 
     group('loading state', () {
@@ -226,6 +320,8 @@ void main() {
         await tester.enterText(find.byType(TextField), 'invalid-key');
         await tester.tap(find.text('Login'));
         await tester.pumpAndSettle();
+        await tester.tap(find.text('Sign In Without Registering'));
+        await tester.pumpAndSettle();
 
         expect(find.text('Invalid key format'), findsOneWidget);
       });
@@ -244,8 +340,90 @@ void main() {
         await tester.enterText(find.byType(TextField), 'bad-key');
         await tester.tap(find.text('Login'));
         await tester.pumpAndSettle();
+        await tester.tap(find.text('Sign In Without Registering'));
+        await tester.pumpAndSettle();
 
         expect(find.text('Test error'), findsOneWidget);
+      });
+    });
+
+    group('device registration prompt', () {
+      testWidgets('login prompts for device registration preview', (
+        tester,
+      ) async {
+        when(
+          () => mockAuthRepo.login(any()),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+
+        await tester.pumpWidget(buildLoginScreenRouter());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Import Existing Key'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'nsec1dummykey');
+        await tester.tap(find.text('Login'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Register This Device?'), findsOneWidget);
+      });
+
+      testWidgets('can sign in without registering this device', (
+        tester,
+      ) async {
+        when(
+          () => mockAuthRepo.login(any()),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+
+        await tester.pumpWidget(buildLoginScreenRouter());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Import Existing Key'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'nsec1dummykey');
+        await tester.tap(find.text('Login'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Sign In Without Registering'));
+        await tester.pumpAndSettle();
+
+        verify(() => mockAuthRepo.login('nsec1dummykey')).called(1);
+        verifyNever(
+          () => mockLoginDeviceRegistrationService.publishDeviceList(
+            ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
+            ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
+            devices: any(named: 'devices'),
+          ),
+        );
+      });
+
+      testWidgets('can sign in and register this device', (tester) async {
+        when(
+          () => mockAuthRepo.login(any()),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+
+        await tester.pumpWidget(buildLoginScreenRouter());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Import Existing Key'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(find.byType(TextField), 'nsec1dummykey');
+        await tester.tap(find.text('Login'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Sign In and Register'));
+        await tester.pumpAndSettle();
+
+        verify(() => mockAuthRepo.login('nsec1dummykey')).called(1);
+        verify(
+          () => mockLoginDeviceRegistrationService.publishDeviceList(
+            ownerPubkeyHex: testPubkeyHex,
+            ownerPrivkeyHex: testPrivkeyHex,
+            devices: any(named: 'devices'),
+          ),
+        ).called(1);
       });
     });
   });
