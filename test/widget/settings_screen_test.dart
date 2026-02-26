@@ -486,6 +486,32 @@ void main() {
         expect(find.text('Profile picture URL'), findsOneWidget);
       });
 
+      testWidgets('opens own profile picture in modal from settings', (
+        tester,
+      ) async {
+        when(() => mockProfileService.getCachedProfile(any())).thenReturn(
+          NostrProfile(
+            pubkey: testPubkeyHex,
+            displayName: 'Alice',
+            picture: 'https://example.com/alice.jpg',
+            updatedAt: DateTime(2026, 2, 1),
+          ),
+        );
+
+        await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(const ValueKey('settings_profile_avatar_button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('chat_attachment_image_viewer')),
+          findsOneWidget,
+        );
+      });
+
       testWidgets('publishes profile metadata on save', (tester) async {
         when(
           () => mockAuthRepo.getPrivateKey(),

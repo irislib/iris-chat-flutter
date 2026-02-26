@@ -23,7 +23,9 @@ import '../../../../core/services/nostr_relay_settings_service.dart';
 import '../../../../core/services/profile_service.dart';
 import '../../../../core/services/secure_storage_service.dart';
 import '../../../../shared/utils/formatters.dart';
+import '../../../../shared/widgets/image_viewer_modal.dart';
 import '../../../chat/presentation/widgets/chats_back_button.dart';
+import '../../../chat/presentation/widgets/profile_avatar.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -48,6 +50,15 @@ class SettingsScreen extends ConsumerWidget {
     final ownProfile = authState.pubkeyHex == null
         ? null
         : profileService.getCachedProfile(authState.pubkeyHex!);
+    final ownProfilePicture = ownProfile?.picture?.trim();
+    final hasOwnProfilePicture =
+        ownProfilePicture != null &&
+        ownProfilePicture.isNotEmpty &&
+        _isHttpUrl(ownProfilePicture);
+    final imgproxyService = ImgproxyService(imgproxySettings.config);
+    final ownProfileViewerUrl = hasOwnProfilePicture
+        ? imgproxyService.proxiedUrl(ownProfilePicture)
+        : null;
     final npub = authState.pubkeyHex != null
         ? formatPubkeyAsNpub(authState.pubkeyHex!)
         : null;
@@ -84,7 +95,29 @@ class SettingsScreen extends ConsumerWidget {
           ),
           if (authState.pubkeyHex != null)
             ListTile(
-              leading: const Icon(Icons.badge),
+              leading:
+                  hasOwnProfilePicture &&
+                      ownProfileViewerUrl != null &&
+                      authState.pubkeyHex != null
+                  ? InkResponse(
+                      key: const ValueKey('settings_profile_avatar_button'),
+                      onTap: () => showImageViewerModal(
+                        context,
+                        imageProvider: NetworkImage(ownProfileViewerUrl),
+                      ),
+                      radius: 22,
+                      customBorder: const CircleBorder(),
+                      child: ProfileAvatar(
+                        pubkeyHex: authState.pubkeyHex!,
+                        displayName: ownProfile?.bestName ?? 'You',
+                        pictureUrl: ownProfilePicture,
+                        radius: 18,
+                        backgroundColor: theme.colorScheme.primaryContainer,
+                        foregroundTextColor:
+                            theme.colorScheme.onPrimaryContainer,
+                      ),
+                    )
+                  : const Icon(Icons.badge),
               title: const Text('Profile'),
               subtitle: Text(
                 authState.isLinkedDevice
@@ -602,6 +635,13 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     return privateKey;
+  }
+
+  bool _isHttpUrl(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null) return false;
+    final scheme = uri.scheme.toLowerCase();
+    return (scheme == 'http' || scheme == 'https') && uri.host.isNotEmpty;
   }
 
   String _profileSummary(NostrProfile? profile) {
