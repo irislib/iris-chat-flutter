@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/desktop_notification_provider.dart';
+import '../../../../config/providers/device_manager_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
 import '../../../../config/providers/messaging_preferences_provider.dart';
 import '../../../../config/providers/mobile_push_provider.dart';
@@ -21,12 +22,16 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
+    final deviceState = ref.watch(deviceManagerProvider);
     final startupLaunchState = ref.watch(startupLaunchProvider);
     final messagingPreferences = ref.watch(messagingPreferencesProvider);
     final desktopNotificationsSupported = ref.watch(
       desktopNotificationsSupportedProvider,
     );
     final mobilePushSupported = ref.watch(mobilePushSupportedProvider);
+    final npub = authState.pubkeyHex != null
+        ? formatPubkeyAsNpub(authState.pubkeyHex!)
+        : null;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -39,17 +44,13 @@ class SettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.person),
             title: const Text('Public Key'),
             subtitle: Text(
-              authState.pubkeyHex != null
-                  ? formatPubkeyForDisplay(authState.pubkeyHex!)
-                  : 'Not logged in',
+              npub != null ? formatPubkeyForDisplay(npub) : 'Not logged in',
             ),
-            trailing: authState.pubkeyHex != null
+            trailing: npub != null
                 ? IconButton(
                     icon: const Icon(Icons.copy),
                     onPressed: () async {
-                      await Clipboard.setData(
-                        ClipboardData(text: authState.pubkeyHex!),
-                      );
+                      await Clipboard.setData(ClipboardData(text: npub));
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Copied public key')),
@@ -74,6 +75,85 @@ class SettingsScreen extends ConsumerWidget {
                 ? null
                 : () => context.push('/invite/scan'),
           ),
+          if (!authState.isLinkedDevice &&
+              !deviceState.isCurrentDeviceRegistered)
+            ListTile(
+              leading: const Icon(Icons.app_registration),
+              title: const Text('Register This Device'),
+              subtitle: const Text(
+                'Add this device to your encrypted messaging devices',
+              ),
+              onTap: deviceState.isUpdating
+                  ? null
+                  : () => _registerCurrentDevice(context, ref),
+            ),
+          if (authState.isLinkedDevice)
+            const ListTile(
+              leading: Icon(Icons.info_outline),
+              title: Text('Device Management'),
+              subtitle: Text('Manage registered devices on your main client'),
+            ),
+          if (!authState.isLinkedDevice && deviceState.isLoading)
+            const ListTile(
+              leading: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              title: Text('Loading registered devices...'),
+            ),
+          if (!authState.isLinkedDevice &&
+              !deviceState.isLoading &&
+              deviceState.devices.isEmpty)
+            const ListTile(
+              leading: Icon(Icons.devices_other),
+              title: Text('No registered devices yet'),
+              subtitle: Text(
+                'Register this device to enable multi-device sync',
+              ),
+            ),
+          if (!authState.isLinkedDevice)
+            ...deviceState.devices.map((device) {
+              final isCurrent =
+                  device.identityPubkeyHex ==
+                  deviceState.currentDevicePubkeyHex;
+              final addedAt = DateTime.fromMillisecondsSinceEpoch(
+                device.createdAt * 1000,
+              );
+              return ListTile(
+                leading: const Icon(Icons.computer),
+                title: Text(
+                  formatPubkeyForDisplay(
+                    formatPubkeyAsNpub(device.identityPubkeyHex),
+                  ),
+                ),
+                subtitle: Text(
+                  isCurrent
+                      ? 'This device • Added ${formatDate(addedAt)}'
+                      : 'Added ${formatDate(addedAt)}',
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: isCurrent ? 'Remove this device' : 'Delete device',
+                  onPressed: deviceState.isUpdating
+                      ? null
+                      : () => _confirmDeleteDevice(
+                          context,
+                          ref,
+                          identityPubkeyHex: device.identityPubkeyHex,
+                          isCurrentDevice: isCurrent,
+                        ),
+                ),
+              );
+            }),
+          if (deviceState.error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                deviceState.error!,
+                style: TextStyle(color: theme.colorScheme.error, fontSize: 12),
+              ),
+            ),
 
           // Security section
           const _SectionHeader(title: 'Security'),
@@ -255,7 +335,7 @@ class SettingsScreen extends ConsumerWidget {
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final shouldCopy = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Export Private Key'),
@@ -270,68 +350,24 @@ class SettingsScreen extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Show Key'),
+            child: const Text('Copy'),
           ),
         ],
       ),
     );
 
-    if ((confirmed ?? false) && context.mounted) {
+    if ((shouldCopy ?? false) && context.mounted) {
       final authRepo = ref.read(authRepositoryProvider);
       final privkey = await authRepo.getPrivateKey();
 
       if (privkey != null && context.mounted) {
         final exportableKey = _toExportableNsec(privkey);
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Your Private Key'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SelectableText(
-                    exportableKey,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Store this key securely. Anyone with this key can access your account.',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: exportableKey));
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Copied to clipboard')),
-                    );
-                  }
-                },
-                child: const Text('Copy'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        );
+        await Clipboard.setData(ClipboardData(text: exportableKey));
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
+        }
       }
     }
   }
@@ -351,6 +387,80 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     return privateKey;
+  }
+
+  Future<void> _registerCurrentDevice(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final ok = await ref
+        .read(deviceManagerProvider.notifier)
+        .registerCurrentDevice();
+    if (!context.mounted) return;
+
+    if (ok) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Device registered')));
+      return;
+    }
+
+    final error = ref.read(deviceManagerProvider).error;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error ?? 'Failed to register device')),
+    );
+  }
+
+  Future<void> _confirmDeleteDevice(
+    BuildContext context,
+    WidgetRef ref, {
+    required String identityPubkeyHex,
+    required bool isCurrentDevice,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isCurrentDevice ? 'Remove This Device?' : 'Delete Device?'),
+        content: Text(
+          isCurrentDevice
+              ? 'This removes the current device from your authorized device list. '
+                    'You can register it again later.'
+              : 'This device will no longer be authorized for encrypted messaging.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: Text(isCurrentDevice ? 'Remove' : 'Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final ok = await ref
+        .read(deviceManagerProvider.notifier)
+        .deleteDevice(identityPubkeyHex);
+    if (!context.mounted) return;
+
+    if (ok) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Device removed')));
+      return;
+    }
+
+    final error = ref.read(deviceManagerProvider).error;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(error ?? 'Failed to remove device')));
   }
 
   Future<void> _confirmLogout(BuildContext context, WidgetRef ref) async {

@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iris_chat/config/providers/auth_provider.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
 import 'package:iris_chat/config/providers/desktop_notification_provider.dart';
+import 'package:iris_chat/config/providers/device_manager_provider.dart';
 import 'package:iris_chat/config/providers/messaging_preferences_provider.dart';
 import 'package:iris_chat/config/providers/mobile_push_provider.dart';
+import 'package:iris_chat/config/providers/nostr_provider.dart';
 import 'package:iris_chat/config/providers/startup_launch_provider.dart';
+import 'package:iris_chat/core/ffi/ndr_ffi.dart';
 import 'package:iris_chat/core/services/database_service.dart';
 import 'package:iris_chat/core/services/messaging_preferences_service.dart';
+import 'package:iris_chat/core/services/nostr_service.dart';
 import 'package:iris_chat/core/services/startup_launch_service.dart';
 import 'package:iris_chat/features/auth/domain/repositories/auth_repository.dart';
 import 'package:iris_chat/features/settings/presentation/screens/settings_screen.dart';
@@ -20,6 +26,8 @@ import '../test_helpers.dart';
 class MockAuthRepository extends Mock implements AuthRepository {}
 
 class MockDatabaseService extends Mock implements DatabaseService {}
+
+class MockNostrService extends Mock implements NostrService {}
 
 class FakeStartupLaunchService implements StartupLaunchService {
   FakeStartupLaunchService({this.supported = true, this.enabled = true});
@@ -118,15 +126,52 @@ class FakeMessagingPreferencesService implements MessagingPreferencesService {
   }
 }
 
+class TestDeviceManagerNotifier extends DeviceManagerNotifier {
+  TestDeviceManagerNotifier(
+    super.ref,
+    super.nostrService,
+    super.authRepository, {
+    required DeviceManagerState initialState,
+    this.registerResult = true,
+    this.deleteResult = true,
+  }) : super(autoLoad: false) {
+    state = initialState;
+  }
+
+  bool registerResult;
+  bool deleteResult;
+  int registerCalls = 0;
+  int deleteCalls = 0;
+  String? lastDeletedPubkey;
+
+  @override
+  Future<void> loadDevices() async {}
+
+  @override
+  Future<bool> registerCurrentDevice() async {
+    registerCalls += 1;
+    return registerResult;
+  }
+
+  @override
+  Future<bool> deleteDevice(String identityPubkeyHex) async {
+    deleteCalls += 1;
+    lastDeletedPubkey = identityPubkeyHex;
+    return deleteResult;
+  }
+}
+
 void main() {
   late MockAuthRepository mockAuthRepo;
   late MockDatabaseService mockDbService;
+  late MockNostrService mockNostrService;
   late FakeStartupLaunchService startupLaunchService;
   late FakeMessagingPreferencesService messagingPreferencesService;
 
   setUp(() {
     mockAuthRepo = MockAuthRepository();
     mockDbService = MockDatabaseService();
+    mockNostrService = MockNostrService();
     startupLaunchService = FakeStartupLaunchService();
     messagingPreferencesService = FakeMessagingPreferencesService();
   });
@@ -138,8 +183,10 @@ void main() {
     FakeMessagingPreferencesService? messagingService,
     bool? desktopNotificationsSupported,
     bool? mobilePushSupported,
+    DeviceManagerState? deviceManagerState,
+    void Function(TestDeviceManagerNotifier notifier)? onDeviceNotifierCreated,
   }) {
-    final overrides = [
+    final List<Override> overrides = [
       authRepositoryProvider.overrideWithValue(mockAuthRepo),
       databaseServiceProvider.overrideWithValue(mockDbService),
       startupLaunchServiceProvider.overrideWithValue(
@@ -155,6 +202,19 @@ void main() {
           pubkeyHex: pubkeyHex,
           isInitialized: true,
         );
+        return notifier;
+      }),
+      nostrServiceProvider.overrideWithValue(mockNostrService),
+      deviceManagerProvider.overrideWith((ref) {
+        final notifier = TestDeviceManagerNotifier(
+          ref,
+          mockNostrService,
+          mockAuthRepo,
+          initialState:
+              deviceManagerState ??
+              const DeviceManagerState(isLoading: false, devices: []),
+        );
+        onDeviceNotifierCreated?.call(notifier);
         return notifier;
       }),
     ];
@@ -197,8 +257,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Public Key'), findsOneWidget);
-        // Should show truncated pubkey
-        expect(find.textContaining('...'), findsOneWidget);
+        expect(find.textContaining('npub1'), findsOneWidget);
       });
 
       testWidgets('shows "Not logged in" when no pubkey', (tester) async {
@@ -214,6 +273,31 @@ void main() {
 
         // Find the copy icon in the public key row
         expect(find.byIcon(Icons.copy), findsOneWidget);
+      });
+
+      testWidgets('copies npub format for public key', (tester) async {
+        String? copiedText;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+              if (call.method == 'Clipboard.setData') {
+                final args = call.arguments as Map<dynamic, dynamic>?;
+                copiedText = args?['text']?.toString();
+              }
+              return null;
+            });
+        addTearDown(() {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(SystemChannels.platform, null);
+        });
+
+        await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.copy));
+        await tester.pumpAndSettle();
+
+        final expected = nostr.Nip19.encodePubkey(testPubkeyHex) as String;
+        expect(copiedText, expected);
       });
 
       testWidgets('shows person icon for public key row', (tester) async {
@@ -259,7 +343,7 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('Cancel'), findsOneWidget);
-        expect(find.text('Show Key'), findsOneWidget);
+        expect(find.text('Copy'), findsOneWidget);
       });
 
       testWidgets('closes export dialog when Cancel tapped', (tester) async {
@@ -273,15 +357,30 @@ void main() {
         await tester.pumpAndSettle();
 
         // Dialog should be closed
-        expect(find.text('Show Key'), findsNothing);
+        expect(find.textContaining('Never share it with anyone'), findsNothing);
       });
 
-      testWidgets('shows private key when Show Key tapped', (tester) async {
+      testWidgets('copies private key in nsec format when Copy tapped', (
+        tester,
+      ) async {
         when(
           () => mockAuthRepo.getPrivateKey(),
         ).thenAnswer((_) async => testPrivkeyHex);
         final expectedNsec =
             nostr.Nip19.encodePrivkey(testPrivkeyHex) as String;
+        String? copiedText;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+              if (call.method == 'Clipboard.setData') {
+                final args = call.arguments as Map<dynamic, dynamic>?;
+                copiedText = args?['text']?.toString();
+              }
+              return null;
+            });
+        addTearDown(() {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(SystemChannels.platform, null);
+        });
 
         await tester.pumpWidget(buildSettingsScreen(pubkeyHex: testPubkeyHex));
         await tester.pumpAndSettle();
@@ -289,12 +388,92 @@ void main() {
         await tester.tap(find.text('Export Private Key'));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Show Key'));
+        expect(find.text(testPrivkeyHex), findsNothing);
+        await tester.tap(find.text('Copy'));
+        await tester.pumpAndSettle();
+        expect(copiedText, expectedNsec);
+      });
+    });
+
+    group('devices section', () {
+      testWidgets(
+        'shows register button when current device is not registered',
+        (tester) async {
+          await tester.pumpWidget(
+            buildSettingsScreen(
+              pubkeyHex: testPubkeyHex,
+              deviceManagerState: const DeviceManagerState(
+                isLoading: false,
+                currentDevicePubkeyHex: '1111',
+                devices: [
+                  FfiDeviceEntry(
+                    identityPubkeyHex: '2222',
+                    createdAt: 1700000000,
+                  ),
+                ],
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.text('Register This Device'), findsOneWidget);
+        },
+      );
+
+      testWidgets('register button calls registerCurrentDevice()', (
+        tester,
+      ) async {
+        TestDeviceManagerNotifier? deviceNotifier;
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            deviceManagerState: const DeviceManagerState(
+              isLoading: false,
+              currentDevicePubkeyHex: '1111',
+              devices: [],
+            ),
+            onDeviceNotifierCreated: (notifier) => deviceNotifier = notifier,
+          ),
+        );
         await tester.pumpAndSettle();
 
-        expect(find.text('Your Private Key'), findsOneWidget);
-        expect(find.text(expectedNsec), findsOneWidget);
-        expect(find.text('Copy'), findsOneWidget);
+        await tester.tap(find.text('Register This Device'));
+        await tester.pumpAndSettle();
+
+        expect(deviceNotifier, isNotNull);
+        expect(deviceNotifier!.registerCalls, 1);
+      });
+
+      testWidgets('delete device action calls notifier after confirmation', (
+        tester,
+      ) async {
+        TestDeviceManagerNotifier? deviceNotifier;
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            deviceManagerState: const DeviceManagerState(
+              isLoading: false,
+              currentDevicePubkeyHex: '1111',
+              devices: [
+                FfiDeviceEntry(
+                  identityPubkeyHex: '2222',
+                  createdAt: 1700000000,
+                ),
+              ],
+            ),
+            onDeviceNotifierCreated: (notifier) => deviceNotifier = notifier,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byTooltip('Delete device'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+
+        expect(deviceNotifier, isNotNull);
+        expect(deviceNotifier!.deleteCalls, 1);
+        expect(deviceNotifier!.lastDeletedPubkey, '2222');
       });
     });
 
@@ -409,6 +588,7 @@ void main() {
           find.text('Mobile Push Notifications'),
           300,
         );
+        await tester.scrollUntilVisible(find.text('Messaging'), -200);
 
         expect(find.text('Messaging'), findsOneWidget);
         expect(find.text('Send Typing Indicators'), findsOneWidget);
@@ -612,6 +792,18 @@ void main() {
               startupLaunchServiceProvider.overrideWithValue(
                 startupLaunchService,
               ),
+              nostrServiceProvider.overrideWithValue(mockNostrService),
+              deviceManagerProvider.overrideWith((ref) {
+                return TestDeviceManagerNotifier(
+                  ref,
+                  mockNostrService,
+                  mockAuthRepo,
+                  initialState: const DeviceManagerState(
+                    isLoading: false,
+                    devices: [],
+                  ),
+                );
+              }),
               authStateProvider.overrideWith((ref) {
                 final notifier = AuthNotifier(mockAuthRepo);
                 notifier.state = const AuthState(

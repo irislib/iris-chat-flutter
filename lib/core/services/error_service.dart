@@ -66,8 +66,7 @@ class AppError implements Exception {
 
   /// Get a detailed string for debugging.
   String toDebugString() {
-    final buffer = StringBuffer()
-      ..writeln('AppError(${type.name}): $message');
+    final buffer = StringBuffer()..writeln('AppError(${type.name}): $message');
     if (technicalDetails != null) {
       buffer.writeln('Details: $technicalDetails');
     }
@@ -104,7 +103,8 @@ class ErrorService {
     if (error is NostrException) {
       return AppError(
         type: AppErrorType.serverUnavailable,
-        message: 'Unable to connect to messaging servers. Please check your connection.',
+        message:
+            'Unable to connect to messaging servers. Please check your connection.',
         technicalDetails: error.message,
         originalError: error,
         stackTrace: stackTrace,
@@ -194,7 +194,8 @@ class ErrorService {
       case NdrErrorType.cryptoFailure:
         return AppError(
           type: AppErrorType.encryption,
-          message: 'Failed to encrypt or decrypt message. The session may need to be re-established.',
+          message:
+              'Failed to encrypt or decrypt message. The session may need to be re-established.',
           technicalDetails: error.message,
           originalError: error,
           stackTrace: stackTrace,
@@ -230,7 +231,8 @@ class ErrorService {
       case NdrErrorType.sessionNotReady:
         return AppError(
           type: AppErrorType.sessionExpired,
-          message: 'Session is not ready. Please wait for the connection to establish.',
+          message:
+              'Session is not ready. Please wait for the connection to establish.',
           technicalDetails: error.message,
           originalError: error,
           stackTrace: stackTrace,
@@ -252,6 +254,35 @@ class ErrorService {
     PlatformException error,
     StackTrace? stackTrace,
   ) {
+    final message = error.message ?? '';
+    final normalizedMessage = message.toLowerCase();
+
+    if (error.code == 'NdrError') {
+      if (normalizedMessage.contains('cannot accept invite from this device')) {
+        return AppError(
+          type: AppErrorType.validation,
+          message:
+              'That invite was created by this same device. Open it on another device or use a different invite.',
+          technicalDetails: '${error.code}: $message',
+          originalError: error,
+          stackTrace: stackTrace,
+          isRetryable: false,
+        );
+      }
+
+      if (normalizedMessage.contains('invite device is not authorized')) {
+        return AppError(
+          type: AppErrorType.validation,
+          message:
+              'This invite is no longer authorized for the account. Ask for a fresh invite.',
+          technicalDetails: '${error.code}: $message',
+          originalError: error,
+          stackTrace: stackTrace,
+          isRetryable: false,
+        );
+      }
+    }
+
     // Check for common platform error codes
     switch (error.code) {
       case 'NETWORK_ERROR':
@@ -278,7 +309,7 @@ class ErrorService {
         return AppError(
           type: AppErrorType.unknown,
           message: 'A platform error occurred. Please try again.',
-          technicalDetails: '${error.code}: ${error.message}',
+          technicalDetails: '${error.code}: $message',
           originalError: error,
           stackTrace: stackTrace,
           isRetryable: true,
