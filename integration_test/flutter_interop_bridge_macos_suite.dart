@@ -385,6 +385,9 @@ void main() {
 
     const relayUrl = String.fromEnvironment('IRIS_INTEROP_RELAY_URL');
     const bridgeDirPath = String.fromEnvironment('IRIS_INTEROP_BRIDGE_DIR');
+    const privateKeyNsec = String.fromEnvironment(
+      'IRIS_INTEROP_PRIVATE_KEY_NSEC',
+    );
 
     expect(relayUrl, isNotEmpty, reason: 'IRIS_INTEROP_RELAY_URL is required');
     expect(
@@ -413,7 +416,18 @@ void main() {
     );
 
     try {
-      await container.read(authStateProvider.notifier).createIdentity();
+      if (privateKeyNsec.trim().isNotEmpty) {
+        await container.read(authStateProvider.notifier).login(privateKeyNsec);
+      } else {
+        await container.read(authStateProvider.notifier).createIdentity();
+      }
+
+      final authState = container.read(authStateProvider);
+      expect(
+        authState.isAuthenticated,
+        isTrue,
+        reason: authState.error ?? 'Bridge auth failed',
+      );
       await container.read(nostrServiceProvider).connect();
 
       // Start invite/message bridge wiring.
