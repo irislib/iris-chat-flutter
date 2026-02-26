@@ -207,15 +207,19 @@ class GroupNotifier extends StateNotifier<GroupState> {
         groups: [group, ...state.groups.where((g) => g.id != group.id)],
         error: null,
       );
+      await _upsertGroupInNativeManager(group);
 
-      // Send group metadata (kind 40) through GroupManager.
-      await _sendGroupEventThroughManager(
-        group: group,
+      // Mirror GroupManager.createGroup fanout semantics:
+      // local create + pairwise metadata delivery to members (excluding self).
+      // TODO: switch to native GroupManager.createGroup once ndr-ffi exposes it.
+      await _sendGroupEventToRecipients(
+        recipients: group.members,
         kind: _kGroupMetadataKind,
         content: buildGroupMetadataContent(group),
         tags: [
           [kGroupTagName, group.id],
         ],
+        createdAtSeconds: group.createdAt.millisecondsSinceEpoch ~/ 1000,
       );
 
       return group.id;
