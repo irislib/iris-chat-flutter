@@ -766,6 +766,27 @@ class SessionManagerHandle {
     });
   }
 
+  /// Create a group through native GroupManager and optionally fan out metadata.
+  Future<GroupCreateResult> groupCreate({
+    required String name,
+    required List<String> memberOwnerPubkeys,
+    bool fanoutMetadata = true,
+    int? nowMs,
+  }) async {
+    final result = await _channel
+        .invokeMethod<Map>('sessionManagerGroupCreate', {
+          'id': _id,
+          'name': name,
+          'memberOwnerPubkeys': memberOwnerPubkeys,
+          'fanoutMetadata': fanoutMetadata,
+          'nowMs': nowMs,
+        });
+    if (result == null) {
+      throw NdrException.sessionNotReady('Failed to create group');
+    }
+    return GroupCreateResult.fromMap(Map<String, dynamic>.from(result));
+  }
+
   /// Remove group metadata from the native GroupManager.
   Future<void> groupRemove(String groupId) async {
     await _channel.invokeMethod<void>('sessionManagerGroupRemove', {

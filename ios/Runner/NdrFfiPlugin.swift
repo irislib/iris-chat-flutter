@@ -105,6 +105,8 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
                 try handleSessionManagerSendTextWithInnerId(call: call, result: result)
             case "sessionManagerSendEventWithInnerId":
                 try handleSessionManagerSendEventWithInnerId(call: call, result: result)
+            case "sessionManagerGroupCreate":
+                try handleSessionManagerGroupCreate(call: call, result: result)
             case "sessionManagerGroupUpsert":
                 try handleSessionManagerGroupUpsert(call: call, result: result)
             case "sessionManagerGroupRemove":
@@ -764,6 +766,48 @@ public class NdrFfiPlugin: NSObject, FlutterPlugin {
         )
         try manager.groupUpsert(group: group)
         result(nil)
+    }
+
+    private func handleSessionManagerGroupCreate(call: FlutterMethodCall, result: FlutterResult) throws {
+        guard let args = call.arguments as? [String: Any],
+              let id = args["id"] as? String,
+              let name = args["name"] as? String else {
+            throw PluginError.invalidArguments("Missing id or name")
+        }
+        let memberOwnerPubkeys = args["memberOwnerPubkeys"] as? [String] ?? []
+        let fanoutMetadata = args["fanoutMetadata"] as? Bool
+        let nowMs = (args["nowMs"] as? NSNumber)?.uint64Value
+
+        guard let manager = sessionManagerHandles[id] else {
+            throw PluginError.handleNotFound("SessionManager handle not found: \(id)")
+        }
+        let created = try manager.groupCreate(
+            name: name,
+            memberOwnerPubkeys: memberOwnerPubkeys,
+            fanoutMetadata: fanoutMetadata,
+            nowMs: nowMs
+        )
+
+        result([
+            "group": [
+                "id": created.group.id,
+                "name": created.group.name,
+                "description": created.group.description as Any,
+                "picture": created.group.picture as Any,
+                "members": created.group.members,
+                "admins": created.group.admins,
+                "createdAtMs": created.group.createdAtMs,
+                "secret": created.group.secret as Any,
+                "accepted": created.group.accepted as Any,
+            ],
+            "metadataRumorJson": created.metadataRumorJson as Any,
+            "fanout": [
+                "enabled": created.fanout.enabled,
+                "attempted": Int(created.fanout.attempted),
+                "succeeded": created.fanout.succeeded,
+                "failed": created.fanout.failed,
+            ],
+        ])
     }
 
     private func handleSessionManagerGroupRemove(call: FlutterMethodCall, result: FlutterResult) throws {

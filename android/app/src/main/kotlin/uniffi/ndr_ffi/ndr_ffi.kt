@@ -820,6 +820,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -913,6 +915,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_ndr_ffi_fn_method_sessionmanagerhandle_get_total_sessions(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
+    fun uniffi_ndr_ffi_fn_method_sessionmanagerhandle_group_create(`ptr`: Pointer,`name`: RustBuffer.ByValue,`memberOwnerPubkeys`: RustBuffer.ByValue,`fanoutMetadata`: RustBuffer.ByValue,`nowMs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_ndr_ffi_fn_method_sessionmanagerhandle_group_handle_incoming_session_event(`ptr`: Pointer,`eventJson`: RustBuffer.ByValue,`fromOwnerPubkeyHex`: RustBuffer.ByValue,`fromSenderDevicePubkeyHex`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_ndr_ffi_fn_method_sessionmanagerhandle_group_handle_outer_event(`ptr`: Pointer,`eventJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1121,6 +1125,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_ndr_ffi_checksum_method_sessionmanagerhandle_get_total_sessions(
     ): Short
+    fun uniffi_ndr_ffi_checksum_method_sessionmanagerhandle_group_create(
+    ): Short
     fun uniffi_ndr_ffi_checksum_method_sessionmanagerhandle_group_handle_incoming_session_event(
     ): Short
     fun uniffi_ndr_ffi_checksum_method_sessionmanagerhandle_group_handle_outer_event(
@@ -1266,6 +1272,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ndr_ffi_checksum_method_sessionmanagerhandle_get_total_sessions() != 54736.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_ndr_ffi_checksum_method_sessionmanagerhandle_group_create() != 41536.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_ndr_ffi_checksum_method_sessionmanagerhandle_group_handle_incoming_session_event() != 45714.toShort()) {
@@ -2573,6 +2582,11 @@ public interface SessionManagerHandleInterface {
     fun `getTotalSessions`(): kotlin.ULong
     
     /**
+     * Create a group through the embedded GroupManager, with optional metadata fanout.
+     */
+    fun `groupCreate`(`name`: kotlin.String, `memberOwnerPubkeys`: List<kotlin.String>, `fanoutMetadata`: kotlin.Boolean?, `nowMs`: kotlin.ULong?): GroupCreateResult
+    
+    /**
      * Handle a decrypted pairwise session rumor that may carry sender-key distribution.
      */
     fun `groupHandleIncomingSessionEvent`(`eventJson`: kotlin.String, `fromOwnerPubkeyHex`: kotlin.String, `fromSenderDevicePubkeyHex`: kotlin.String?): List<GroupDecryptedResult>
@@ -2876,6 +2890,22 @@ open class SessionManagerHandle: Disposable, AutoCloseable, SessionManagerHandle
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_ndr_ffi_fn_method_sessionmanagerhandle_get_total_sessions(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Create a group through the embedded GroupManager, with optional metadata fanout.
+     */
+    @Throws(NdrException::class)override fun `groupCreate`(`name`: kotlin.String, `memberOwnerPubkeys`: List<kotlin.String>, `fanoutMetadata`: kotlin.Boolean?, `nowMs`: kotlin.ULong?): GroupCreateResult {
+            return FfiConverterTypeGroupCreateResult.lift(
+    callWithPointer {
+    uniffiRustCallWithError(NdrException) { _status ->
+    UniffiLib.INSTANCE.uniffi_ndr_ffi_fn_method_sessionmanagerhandle_group_create(
+        it, FfiConverterString.lower(`name`),FfiConverterSequenceString.lower(`memberOwnerPubkeys`),FfiConverterOptionalBoolean.lower(`fanoutMetadata`),FfiConverterOptionalULong.lower(`nowMs`),_status)
 }
     }
     )
@@ -3342,6 +3372,88 @@ public object FfiConverterTypeFfiKeyPair: FfiConverterRustBuffer<FfiKeyPair> {
     override fun write(value: FfiKeyPair, buf: ByteBuffer) {
             FfiConverterString.write(value.`publicKeyHex`, buf)
             FfiConverterString.write(value.`privateKeyHex`, buf)
+    }
+}
+
+
+
+/**
+ * Metadata fanout summary for group creation.
+ */
+data class GroupCreateFanout (
+    var `enabled`: kotlin.Boolean, 
+    var `attempted`: kotlin.ULong, 
+    var `succeeded`: List<kotlin.String>, 
+    var `failed`: List<kotlin.String>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGroupCreateFanout: FfiConverterRustBuffer<GroupCreateFanout> {
+    override fun read(buf: ByteBuffer): GroupCreateFanout {
+        return GroupCreateFanout(
+            FfiConverterBoolean.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterSequenceString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GroupCreateFanout) = (
+            FfiConverterBoolean.allocationSize(value.`enabled`) +
+            FfiConverterULong.allocationSize(value.`attempted`) +
+            FfiConverterSequenceString.allocationSize(value.`succeeded`) +
+            FfiConverterSequenceString.allocationSize(value.`failed`)
+    )
+
+    override fun write(value: GroupCreateFanout, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`enabled`, buf)
+            FfiConverterULong.write(value.`attempted`, buf)
+            FfiConverterSequenceString.write(value.`succeeded`, buf)
+            FfiConverterSequenceString.write(value.`failed`, buf)
+    }
+}
+
+
+
+/**
+ * Result of creating a group through GroupManager.
+ */
+data class GroupCreateResult (
+    var `group`: FfiGroupData, 
+    var `metadataRumorJson`: kotlin.String?, 
+    var `fanout`: GroupCreateFanout
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGroupCreateResult: FfiConverterRustBuffer<GroupCreateResult> {
+    override fun read(buf: ByteBuffer): GroupCreateResult {
+        return GroupCreateResult(
+            FfiConverterTypeFfiGroupData.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterTypeGroupCreateFanout.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GroupCreateResult) = (
+            FfiConverterTypeFfiGroupData.allocationSize(value.`group`) +
+            FfiConverterOptionalString.allocationSize(value.`metadataRumorJson`) +
+            FfiConverterTypeGroupCreateFanout.allocationSize(value.`fanout`)
+    )
+
+    override fun write(value: GroupCreateResult, buf: ByteBuffer) {
+            FfiConverterTypeFfiGroupData.write(value.`group`, buf)
+            FfiConverterOptionalString.write(value.`metadataRumorJson`, buf)
+            FfiConverterTypeGroupCreateFanout.write(value.`fanout`, buf)
     }
 }
 

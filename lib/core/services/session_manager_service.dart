@@ -172,6 +172,27 @@ class SessionManagerService {
     await _refreshGroupOuterSubscription();
   }
 
+  Future<GroupCreateResult> groupCreate({
+    required String name,
+    required List<String> memberOwnerPubkeys,
+    bool fanoutMetadata = true,
+    int? nowMs,
+  }) async {
+    final manager = _manager;
+    if (manager == null) {
+      throw const NostrException('Session manager not initialized');
+    }
+    final created = await manager.groupCreate(
+      name: name,
+      memberOwnerPubkeys: memberOwnerPubkeys,
+      fanoutMetadata: fanoutMetadata,
+      nowMs: nowMs,
+    );
+    await _drainEvents();
+    await _refreshGroupOuterSubscription();
+    return created;
+  }
+
   Future<void> groupRemove(String groupId) async {
     final manager = _manager;
     if (manager == null) return;

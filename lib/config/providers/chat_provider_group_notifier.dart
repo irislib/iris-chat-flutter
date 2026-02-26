@@ -204,10 +204,23 @@ class GroupNotifier extends StateNotifier<GroupState> {
     }
 
     try {
-      final group = createGroupData(
+      final created = await _sessionManagerService.groupCreate(
         name: name.trim(),
-        creatorPubkeyHex: myPubkeyHex,
-        memberPubkeysHex: memberPubkeysHex,
+        memberOwnerPubkeys: _normalizedHexList(memberPubkeysHex),
+        fanoutMetadata: true,
+      );
+      final group = ChatGroup(
+        id: created.group.id,
+        name: created.group.name,
+        description: created.group.description,
+        picture: created.group.picture,
+        members: _normalizedHexList(created.group.members),
+        admins: _normalizedHexList(created.group.admins),
+        createdAt: DateTime.fromMillisecondsSinceEpoch(
+          created.group.createdAtMs,
+        ),
+        secret: created.group.secret,
+        accepted: created.group.accepted ?? true,
       );
 
       // Persist and update UI.
@@ -216,20 +229,15 @@ class GroupNotifier extends StateNotifier<GroupState> {
         groups: [group, ...state.groups.where((g) => g.id != group.id)],
         error: null,
       );
-      await _upsertGroupInNativeManager(group);
 
-      // Mirror GroupManager.createGroup fanout semantics:
-      // local create + pairwise metadata delivery to members (excluding self).
-      // TODO: switch to native GroupManager.createGroup once ndr-ffi exposes it.
-      await _sendGroupEventToRecipients(
-        recipients: group.members,
-        kind: _kGroupMetadataKind,
-        content: buildGroupMetadataContent(group),
-        tags: [
-          [kGroupTagName, group.id],
-        ],
-        createdAtSeconds: group.createdAt.millisecondsSinceEpoch ~/ 1000,
-      );
+      // Fan out metadata back to the owner so other clients/devices logged into
+      // the same account can materialize the group without requiring another member.
+      try {
+        await _sendGroupMetadataSenderCopyToOwner(
+          ownerPubkeyHex: myPubkeyHex,
+          metadataRumorJson: created.metadataRumorJson,
+        );
+      } catch (_) {}
 
       return group.id;
     } catch (e, st) {
@@ -622,6 +630,8 @@ class GroupNotifier extends StateNotifier<GroupState> {
         if (replyToId != null && replyToId.trim().isNotEmpty)
           ['e', replyToId.trim(), '', 'reply'],
       ];
+      final tagsJson = jsonEncode(tags);
+      final createdAtSeconds = nowMs ~/ 1000;
 
       final sendInnerId = await _sendGroupEventThroughManager(
         group: group,
@@ -630,6 +640,18 @@ class GroupNotifier extends StateNotifier<GroupState> {
         tags: tags,
         nowMs: nowMs,
       );
+
+      // Best effort sender-copy to owner so other devices on the same account
+      // can materialize messages in self-only groups.
+      try {
+        await _sessionManagerService.sendEventWithInnerId(
+          recipientPubkeyHex: myPubkeyHex,
+          kind: _kChatMessageKind,
+          content: trimmed,
+          tagsJson: tagsJson,
+          createdAtSeconds: createdAtSeconds,
+        );
+      } catch (_) {}
 
       final rumorId =
           sendInnerId ?? DateTime.now().microsecondsSinceEpoch.toString();
@@ -1162,6 +1184,28 @@ class GroupNotifier extends StateNotifier<GroupState> {
       }
     }
     return innerId;
+  }
+
+  Future<void> _sendGroupMetadataSenderCopyToOwner({
+    required String ownerPubkeyHex,
+    required String? metadataRumorJson,
+  }) async {
+    final rumorJson = metadataRumorJson?.trim();
+    if (rumorJson == null || rumorJson.isEmpty) return;
+
+    final rumor = NostrRumor.tryParse(rumorJson);
+    if (rumor == null) return;
+
+    final recipient = ownerPubkeyHex.toLowerCase().trim();
+    if (recipient.isEmpty) return;
+
+    await _sessionManagerService.sendEventWithInnerId(
+      recipientPubkeyHex: recipient,
+      kind: rumor.kind,
+      content: rumor.content,
+      tagsJson: jsonEncode(rumor.tags),
+      createdAtSeconds: rumor.createdAt,
+    );
   }
 
   void _updateGroupLastMessageInState(

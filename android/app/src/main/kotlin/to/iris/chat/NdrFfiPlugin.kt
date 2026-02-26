@@ -82,6 +82,7 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
                 "sessionManagerSendText" -> handleSessionManagerSendText(call, result)
                 "sessionManagerSendTextWithInnerId" -> handleSessionManagerSendTextWithInnerId(call, result)
                 "sessionManagerSendEventWithInnerId" -> handleSessionManagerSendEventWithInnerId(call, result)
+                "sessionManagerGroupCreate" -> handleSessionManagerGroupCreate(call, result)
                 "sessionManagerGroupUpsert" -> handleSessionManagerGroupUpsert(call, result)
                 "sessionManagerGroupRemove" -> handleSessionManagerGroupRemove(call, result)
                 "sessionManagerGroupKnownSenderEventPubkeys" -> handleSessionManagerGroupKnownSenderEventPubkeys(call, result)
@@ -644,6 +645,45 @@ class NdrFfiPlugin : FlutterPlugin, MethodCallHandler {
         )
         manager.groupUpsert(group)
         result.success(null)
+    }
+
+    private fun handleSessionManagerGroupCreate(call: MethodCall, result: Result) {
+        val id = call.argument<String>("id")
+            ?: throw IllegalArgumentException("Missing id")
+        val name = call.argument<String>("name")
+            ?: throw IllegalArgumentException("Missing name")
+        val memberOwnerPubkeys = (call.argument<List<*>>("memberOwnerPubkeys"))
+            ?.mapNotNull { it as? String }
+            ?: emptyList()
+        val fanoutMetadata = call.argument<Boolean>("fanoutMetadata")
+        val nowMs = (call.argument<Number>("nowMs"))?.toLong()?.toULong()
+
+        val manager = sessionManagerHandles[id]
+            ?: throw IllegalArgumentException("SessionManager handle not found: $id")
+        val created = manager.groupCreate(name, memberOwnerPubkeys, fanoutMetadata, nowMs)
+
+        result.success(
+            mapOf(
+                "group" to mapOf(
+                    "id" to created.group.id,
+                    "name" to created.group.name,
+                    "description" to created.group.description,
+                    "picture" to created.group.picture,
+                    "members" to created.group.members,
+                    "admins" to created.group.admins,
+                    "createdAtMs" to created.group.createdAtMs.toLong(),
+                    "secret" to created.group.secret,
+                    "accepted" to created.group.accepted,
+                ),
+                "metadataRumorJson" to created.metadataRumorJson,
+                "fanout" to mapOf(
+                    "enabled" to created.fanout.enabled,
+                    "attempted" to created.fanout.attempted.toLong(),
+                    "succeeded" to created.fanout.succeeded,
+                    "failed" to created.fanout.failed,
+                ),
+            ),
+        )
     }
 
     private fun handleSessionManagerGroupRemove(call: MethodCall, result: Result) {
