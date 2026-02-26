@@ -44,6 +44,8 @@ class _TestGroupNotifier extends GroupNotifier {
   int addMembersCalls = 0;
   int removeMemberCalls = 0;
   int renameCalls = 0;
+  int setTtlCalls = 0;
+  int setPictureCalls = 0;
 
   @override
   Future<void> loadGroups() async {
@@ -100,6 +102,39 @@ class _TestGroupNotifier extends GroupNotifier {
                   )
                 : g,
           )
+          .toList(),
+    );
+  }
+
+  @override
+  Future<void> setGroupMessageTtlSeconds(
+    String groupId,
+    int? ttlSeconds,
+  ) async {
+    setTtlCalls++;
+    final normalized = (ttlSeconds != null && ttlSeconds > 0)
+        ? ttlSeconds
+        : null;
+    state = state.copyWith(
+      groups: state.groups
+          .map(
+            (g) =>
+                g.id == groupId ? g.copyWith(messageTtlSeconds: normalized) : g,
+          )
+          .toList(),
+    );
+  }
+
+  @override
+  Future<void> setGroupPicture(String groupId, String? picture) async {
+    setPictureCalls++;
+    final normalized = picture?.trim();
+    final nextPicture = normalized == null || normalized.isEmpty
+        ? null
+        : normalized;
+    state = state.copyWith(
+      groups: state.groups
+          .map((g) => g.id == groupId ? g.copyWith(picture: nextPicture) : g)
           .toList(),
     );
   }
@@ -231,7 +266,9 @@ void main() {
           }),
           groupStateProvider.overrideWith((ref) {
             groupNotifier = _TestGroupNotifier(
-              makeGroup(admins: [testPubkeyHex]),
+              makeGroup(
+                admins: [testPubkeyHex],
+              ).copyWith(messageTtlSeconds: 300),
             );
             return groupNotifier;
           }),
@@ -252,6 +289,110 @@ void main() {
 
     expect(groupNotifier.renameCalls, 1);
     expect(find.text('Renamed Group'), findsOneWidget);
+  });
+
+  testWidgets('admin can change disappearing messages for group', (
+    tester,
+  ) async {
+    final mockAuthRepo = _MockAuthRepository();
+    final mockSessions = _MockSessionLocalDatasource();
+    final mockProfiles = _MockProfileService();
+
+    late _TestGroupNotifier groupNotifier;
+
+    await tester.pumpWidget(
+      createTestApp(
+        const GroupInfoScreen(groupId: 'g1'),
+        overrides: [
+          authRepositoryProvider.overrideWithValue(mockAuthRepo),
+          authStateProvider.overrideWith((ref) {
+            final notifier = AuthNotifier(mockAuthRepo);
+            notifier.state = const AuthState(
+              isAuthenticated: true,
+              pubkeyHex: testPubkeyHex,
+              devicePubkeyHex: testPubkeyHex,
+              isInitialized: true,
+            );
+            return notifier;
+          }),
+          sessionStateProvider.overrideWith((ref) {
+            final notifier = SessionNotifier(mockSessions, mockProfiles);
+            notifier.state = const SessionState(sessions: []);
+            return notifier;
+          }),
+          groupStateProvider.overrideWith((ref) {
+            groupNotifier = _TestGroupNotifier(
+              makeGroup(admins: [testPubkeyHex]),
+            );
+            return groupNotifier;
+          }),
+        ],
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Disappearing Messages'),
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Disappearing Messages'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ListTile, 'Off').last);
+    await tester.pumpAndSettle();
+
+    expect(groupNotifier.setTtlCalls, 1);
+    expect(find.text('Current'), findsOneWidget);
+  });
+
+  testWidgets('admin can remove group photo', (tester) async {
+    final mockAuthRepo = _MockAuthRepository();
+    final mockSessions = _MockSessionLocalDatasource();
+    final mockProfiles = _MockProfileService();
+
+    late _TestGroupNotifier groupNotifier;
+
+    await tester.pumpWidget(
+      createTestApp(
+        const GroupInfoScreen(groupId: 'g1'),
+        overrides: [
+          authRepositoryProvider.overrideWithValue(mockAuthRepo),
+          authStateProvider.overrideWith((ref) {
+            final notifier = AuthNotifier(mockAuthRepo);
+            notifier.state = const AuthState(
+              isAuthenticated: true,
+              pubkeyHex: testPubkeyHex,
+              devicePubkeyHex: testPubkeyHex,
+              isInitialized: true,
+            );
+            return notifier;
+          }),
+          sessionStateProvider.overrideWith((ref) {
+            final notifier = SessionNotifier(mockSessions, mockProfiles);
+            notifier.state = const SessionState(sessions: []);
+            return notifier;
+          }),
+          groupStateProvider.overrideWith((ref) {
+            groupNotifier = _TestGroupNotifier(
+              makeGroup(
+                admins: [testPubkeyHex],
+              ).copyWith(picture: 'nhash://nhash1abc123/group.png'),
+            );
+            return groupNotifier;
+          }),
+        ],
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove Photo'), findsOneWidget);
+
+    await tester.tap(find.text('Remove Photo'));
+    await tester.pumpAndSettle();
+
+    expect(groupNotifier.setPictureCalls, 1);
+    expect(find.text('Remove Photo'), findsNothing);
   });
 
   testWidgets('non-admin cannot edit group members', (tester) async {

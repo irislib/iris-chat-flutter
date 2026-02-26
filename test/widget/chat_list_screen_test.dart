@@ -17,6 +17,7 @@ import 'package:iris_chat/features/chat/data/datasources/group_message_local_dat
 import 'package:iris_chat/features/chat/data/datasources/session_local_datasource.dart';
 import 'package:iris_chat/features/chat/domain/models/session.dart';
 import 'package:iris_chat/features/chat/presentation/screens/chat_list_screen.dart';
+import 'package:iris_chat/features/chat/presentation/widgets/unseen_badge.dart';
 import 'package:iris_chat/features/invite/data/datasources/invite_local_datasource.dart';
 import 'package:iris_chat/shared/utils/animal_names.dart';
 import 'package:mocktail/mocktail.dart';
@@ -109,7 +110,11 @@ void main() {
     );
   });
 
-  Widget buildChatListScreen({List<ChatSession> sessions = const []}) {
+  Widget buildChatListScreen({
+    List<ChatSession> sessions = const [],
+    Map<String, bool>? relayConnectionStatus,
+    ConnectivityStatus connectivityStatus = ConnectivityStatus.online,
+  }) {
     when(
       () => mockSessionDatasource.getAllSessions(),
     ).thenAnswer((_) async => sessions);
@@ -160,7 +165,16 @@ void main() {
           fakeImgproxySettingsService,
         ),
         connectivityStatusProvider.overrideWith(
-          (_) => Stream.value(ConnectivityStatus.online),
+          (_) => Stream.value(connectivityStatus),
+        ),
+        nostrConnectionStatusProvider.overrideWith(
+          (_) => Stream.value(
+            relayConnectionStatus ??
+                const <String, bool>{
+                  'wss://relay.damus.io': false,
+                  'wss://relay.snort.social': false,
+                },
+          ),
         ),
         queuedMessageCountProvider.overrideWithValue(0),
       ],
@@ -179,11 +193,11 @@ void main() {
 
   group('ChatListScreen', () {
     group('app bar', () {
-      testWidgets('shows iris title', (tester) async {
+      testWidgets('shows iris chat title', (tester) async {
         await tester.pumpWidget(buildChatListScreen());
         await tester.pump();
 
-        expect(find.text('iris'), findsOneWidget);
+        expect(find.text('iris chat'), findsOneWidget);
       });
 
       testWidgets('shows settings icon button', (tester) async {
@@ -199,6 +213,103 @@ void main() {
 
         expect(find.byIcon(Icons.add), findsOneWidget);
       });
+
+      testWidgets('shows relay connectivity indicator in header', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildChatListScreen(
+            relayConnectionStatus: const {
+              'wss://relay.one': true,
+              'wss://relay.two': false,
+            },
+          ),
+        );
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey('relay-connectivity-indicator')),
+          findsOneWidget,
+        );
+        final countText = tester.widget<Text>(
+          find.byKey(const ValueKey('relay-connectivity-count')),
+        );
+        expect(countText.data, '1');
+      });
+
+      testWidgets(
+        'shows green relay indicator when at least one relay connected',
+        (tester) async {
+          await tester.pumpWidget(
+            buildChatListScreen(
+              relayConnectionStatus: const {
+                'wss://relay.one': true,
+                'wss://relay.two': false,
+              },
+            ),
+          );
+          await tester.pump();
+
+          final icon = tester.widget<Icon>(
+            find.byKey(const ValueKey('relay-connectivity-icon')),
+          );
+          expect(icon.color, Colors.green);
+        },
+      );
+
+      testWidgets('shows orange relay indicator while connecting', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildChatListScreen(
+            relayConnectionStatus: const {
+              'wss://relay.one': false,
+              'wss://relay.two': false,
+            },
+          ),
+        );
+        await tester.pump();
+
+        final icon = tester.widget<Icon>(
+          find.byKey(const ValueKey('relay-connectivity-icon')),
+        );
+        expect(icon.color, Colors.orange);
+      });
+
+      testWidgets('shows red relay indicator when device is offline', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildChatListScreen(
+            relayConnectionStatus: const {
+              'wss://relay.one': true,
+              'wss://relay.two': true,
+            },
+            connectivityStatus: ConnectivityStatus.offline,
+          ),
+        );
+        await tester.pump();
+
+        final icon = tester.widget<Icon>(
+          find.byKey(const ValueKey('relay-connectivity-icon')),
+        );
+        expect(icon.color, Colors.red);
+      });
+
+      testWidgets(
+        'opens settings when relay connectivity indicator is tapped',
+        (tester) async {
+          await tester.pumpWidget(buildChatListScreen());
+          await tester.pump();
+
+          await tester.tap(
+            find.byKey(const ValueKey('relay-connectivity-indicator')),
+          );
+          await tester.pumpAndSettle();
+
+          expect(find.text('Settings'), findsOneWidget);
+        },
+      );
     });
 
     group('empty state', () {
@@ -303,7 +414,7 @@ void main() {
         await tester.pumpWidget(buildChatListScreen(sessions: sessions));
         await tester.pump();
 
-        expect(find.text('0'), findsNothing);
+        expect(find.byType(UnseenBadge), findsNothing);
       });
 
       testWidgets('shows animal name when no recipient name', (tester) async {

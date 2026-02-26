@@ -3,12 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../config/providers/chat_provider.dart';
+import '../../../../config/providers/connectivity_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
 import '../../../../config/providers/nostr_provider.dart';
+import '../../../../core/services/connectivity_service.dart';
 import '../../../../core/services/profile_service.dart';
 import '../../../../shared/utils/formatters.dart';
 import '../../domain/models/group.dart';
 import '../../domain/models/session.dart';
+import '../widgets/group_avatar.dart';
 import '../widgets/iris_brand_title.dart';
 import '../widgets/offline_indicator.dart';
 import '../widgets/profile_avatar.dart';
@@ -79,6 +82,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
       appBar: AppBar(
         title: const IrisBrandTitle(),
         actions: [
+          RelayConnectivityIndicator(onTap: () => context.push('/settings')),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () => context.push('/chats/new'),
@@ -200,6 +204,97 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   }
 }
 
+class RelayConnectivityIndicator extends ConsumerWidget {
+  const RelayConnectivityIndicator({super.key, this.onTap});
+
+  final VoidCallback? onTap;
+
+  static const _iconKey = ValueKey('relay-connectivity-icon');
+  static const _countKey = ValueKey('relay-connectivity-count');
+  static const _indicatorKey = ValueKey('relay-connectivity-indicator');
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final connectionStatus =
+        ref.watch(nostrConnectionStatusProvider).valueOrNull ??
+        const <String, bool>{};
+    final connectivity = ref.watch(connectivityStatusProvider).valueOrNull;
+
+    final connectedCount = connectionStatus.values
+        .where((connected) => connected)
+        .length;
+    final totalCount = connectionStatus.length;
+    final isOffline = connectivity == ConnectivityStatus.offline;
+    final color = _statusColor(
+      isOffline: isOffline,
+      connectedCount: connectedCount,
+      totalCount: totalCount,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Tooltip(
+        message: _statusLabel(
+          isOffline: isOffline,
+          connectedCount: connectedCount,
+          totalCount: totalCount,
+        ),
+        child: InkWell(
+          key: _indicatorKey,
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.wifi, key: _iconKey, size: 16, color: color),
+                const SizedBox(width: 4),
+                Text(
+                  '$connectedCount',
+                  key: _countKey,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _statusColor({
+    required bool isOffline,
+    required int connectedCount,
+    required int totalCount,
+  }) {
+    if (isOffline) return Colors.red;
+    if (connectedCount == 0) {
+      return totalCount > 0 ? Colors.orange : Colors.red;
+    }
+    return Colors.green;
+  }
+
+  String _statusLabel({
+    required bool isOffline,
+    required int connectedCount,
+    required int totalCount,
+  }) {
+    if (isOffline) return 'Offline';
+    if (connectedCount == 0) {
+      if (totalCount > 0) {
+        return 'Connecting to $totalCount relay${totalCount == 1 ? '' : 's'}';
+      }
+      return 'No relays configured';
+    }
+    return '$connectedCount/$totalCount relay${totalCount == 1 ? '' : 's'} connected';
+  }
+}
+
 class _Thread {
   const _Thread._({this.session, this.group});
 
@@ -252,12 +347,12 @@ class _GroupListItem extends StatelessWidget {
       ),
       onDismissed: (_) => onDelete(),
       child: ListTile(
-        leading: CircleAvatar(
+        leading: GroupAvatar(
+          groupName: group.name,
+          picture: group.picture,
+          radius: 20,
           backgroundColor: theme.colorScheme.secondaryContainer,
-          child: Icon(
-            Icons.groups,
-            color: theme.colorScheme.onSecondaryContainer,
-          ),
+          iconColor: theme.colorScheme.onSecondaryContainer,
         ),
         title: Text(group.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: subtitle != null

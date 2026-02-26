@@ -283,6 +283,94 @@ class GroupNotifier extends StateNotifier<GroupState> {
     }
   }
 
+  Future<void> setGroupMessageTtlSeconds(
+    String groupId,
+    int? ttlSeconds,
+  ) async {
+    final group = await getGroup(groupId);
+    if (group == null) return;
+
+    final myPubkeyHex = _myPubkeyHex();
+    if (myPubkeyHex == null || myPubkeyHex.isEmpty) {
+      state = state.copyWith(error: 'Not logged in');
+      return;
+    }
+    if (!isGroupAdmin(group, myPubkeyHex)) {
+      state = state.copyWith(
+        error: 'Only group admins can edit disappearing messages.',
+      );
+      return;
+    }
+
+    final normalized = (ttlSeconds != null && ttlSeconds > 0)
+        ? ttlSeconds
+        : null;
+    if (group.messageTtlSeconds == normalized) return;
+
+    try {
+      final updated = group.copyWith(messageTtlSeconds: normalized);
+      await _groupDatasource.saveGroup(updated);
+      state = state.copyWith(
+        groups: state.groups.map((g) => g.id == groupId ? updated : g).toList(),
+        error: null,
+      );
+
+      await _sendGroupEventThroughManager(
+        group: updated,
+        kind: _kGroupMetadataKind,
+        content: buildGroupMetadataContent(updated),
+        tags: [
+          [kGroupTagName, updated.id],
+        ],
+      );
+    } catch (e, st) {
+      final appError = AppError.from(e, st);
+      state = state.copyWith(error: appError.message);
+    }
+  }
+
+  Future<void> setGroupPicture(String groupId, String? picture) async {
+    final group = await getGroup(groupId);
+    if (group == null) return;
+
+    final myPubkeyHex = _myPubkeyHex();
+    if (myPubkeyHex == null || myPubkeyHex.isEmpty) {
+      state = state.copyWith(error: 'Not logged in');
+      return;
+    }
+    if (!isGroupAdmin(group, myPubkeyHex)) {
+      state = state.copyWith(error: 'Only group admins can edit the group.');
+      return;
+    }
+
+    final normalized = picture?.trim();
+    final nextPicture = normalized == null || normalized.isEmpty
+        ? null
+        : normalized;
+    if (group.picture == nextPicture) return;
+
+    try {
+      final updated = group.copyWith(picture: nextPicture);
+      await _groupDatasource.saveGroup(updated);
+      state = state.copyWith(
+        groups: state.groups.map((g) => g.id == groupId ? updated : g).toList(),
+        error: null,
+      );
+
+      await _sendGroupEventThroughManager(
+        group: updated,
+        kind: _kGroupMetadataKind,
+        content: buildGroupMetadataContent(updated),
+        tags: [
+          [kGroupTagName, updated.id],
+        ],
+      );
+    } catch (e, st) {
+      final appError = AppError.from(e, st);
+      state = state.copyWith(error: appError.message);
+    }
+  }
+
   Future<void> addGroupMembers(
     String groupId,
     List<String> memberPubkeysHex,
@@ -508,10 +596,16 @@ class GroupNotifier extends StateNotifier<GroupState> {
 
     try {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final ttlSeconds = group.messageTtlSeconds;
+      final expiresAtSeconds = (ttlSeconds != null && ttlSeconds > 0)
+          ? (nowMs ~/ 1000 + ttlSeconds)
+          : null;
 
       final tags = <List<String>>[
         [kGroupTagName, groupId],
         ['ms', nowMs.toString()],
+        if (expiresAtSeconds != null)
+          ['expiration', expiresAtSeconds.toString()],
         if (replyToId != null && replyToId.trim().isNotEmpty)
           ['e', replyToId.trim(), '', 'reply'],
       ];
@@ -535,6 +629,7 @@ class GroupNotifier extends StateNotifier<GroupState> {
         direction: MessageDirection.outgoing,
         status: MessageStatus.sent,
         rumorId: rumorId,
+        expiresAt: expiresAtSeconds,
         replyToId: (replyToId != null && replyToId.trim().isNotEmpty)
             ? replyToId.trim()
             : null,
@@ -771,6 +866,7 @@ class GroupNotifier extends StateNotifier<GroupState> {
       createdAt: createdAt,
       secret: metadata.secret,
       accepted: false,
+      messageTtlSeconds: metadata.messageTtlSeconds,
     );
 
     await _groupDatasource.saveGroup(group);

@@ -536,6 +536,14 @@ void main() {
         );
         expect(urlTile, findsOneWidget);
         expect(saltTile, findsOneWidget);
+        final infoText = find.byWidgetPredicate(
+          (widget) =>
+              widget is Text &&
+              widget.data ==
+                  'These settings are used when loading profile pictures.',
+          skipOffstage: false,
+        );
+        expect(infoText, findsOneWidget);
       });
 
       testWidgets('toggles image proxy enabled setting', (tester) async {
@@ -1100,10 +1108,23 @@ void main() {
           buildSettingsScreen(pubkeyHex: testPubkeyHex, relayService: service),
         );
         await tester.pumpAndSettle();
-
         await tester.scrollUntilVisible(find.text('wss://relay.old'), 300);
-        await tester.tap(find.byTooltip('Edit relay').first);
+
+        final editRelayButton = find.byWidgetPredicate(
+          (widget) =>
+              widget is IconButton &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'relay-edit-wss://relay.old',
+              ),
+          skipOffstage: false,
+        );
+        expect(editRelayButton, findsOneWidget);
+        await tester.ensureVisible(editRelayButton);
         await tester.pumpAndSettle();
+        await tester.tap(editRelayButton);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
 
         await tester.enterText(
           find.byType(TextFormField),
@@ -1126,13 +1147,26 @@ void main() {
           buildSettingsScreen(pubkeyHex: testPubkeyHex, relayService: service),
         );
         await tester.pumpAndSettle();
-
         await tester.scrollUntilVisible(
           find.text('wss://relay.to.delete'),
           300,
         );
-        await tester.tap(find.byTooltip('Delete relay').first);
+
+        final deleteRelayButton = find.byWidgetPredicate(
+          (widget) =>
+              widget is IconButton &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'relay-delete-wss://relay.to.delete',
+              ),
+          skipOffstage: false,
+        );
+        expect(deleteRelayButton, findsOneWidget);
+        await tester.ensureVisible(deleteRelayButton);
         await tester.pumpAndSettle();
+        await tester.tap(deleteRelayButton);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
         await tester.tap(find.text('Delete'));
         await tester.pumpAndSettle();
 

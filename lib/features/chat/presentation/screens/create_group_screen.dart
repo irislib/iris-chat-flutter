@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../config/providers/chat_provider.dart';
-import '../../../../shared/utils/formatters.dart';
 import '../widgets/chats_back_button.dart';
+import '../widgets/profile_name_text.dart';
 
 class CreateGroupScreen extends ConsumerStatefulWidget {
   const CreateGroupScreen({super.key});
@@ -127,9 +127,9 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                                   }
                                 });
                               },
-                        title: Text(s.displayName),
-                        subtitle: Text(
-                          formatPubkeyForDisplay(s.recipientPubkeyHex),
+                        title: ProfileNameText(
+                          pubkeyHex: s.recipientPubkeyHex,
+                          fallbackName: s.displayName,
                         ),
                       );
                     },

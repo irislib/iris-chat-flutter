@@ -141,14 +141,14 @@ class _NewChatScreenState extends ConsumerState<NewChatScreen> {
   Widget build(BuildContext context) {
     final sessions = ref.watch(sessionStateProvider.select((s) => s.sessions));
     final hasChats = sessions.isNotEmpty;
+    final canPop = Navigator.of(context).canPop();
+    final showBackButton = hasChats || canPop;
     final inviteState = ref.watch(inviteStateProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const IrisBrandTitle(),
-        leading: hasChats
-            ? ChatsBackButton(onPressed: () => context.go('/chats'))
-            : null,
+        leading: showBackButton ? const ChatsBackButton() : null,
         automaticallyImplyLeading: false,
         actions: [
           IconButton(

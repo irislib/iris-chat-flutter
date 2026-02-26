@@ -388,11 +388,16 @@ final messageSubscriptionProvider = Provider<SessionManagerService>((ref) {
 });
 
 /// Provider for connection status.
-final nostrConnectionStatusProvider = StreamProvider<Map<String, bool>>((ref) {
+final nostrConnectionStatusProvider = StreamProvider<Map<String, bool>>((
+  ref,
+) async* {
   final nostrService = ref.watch(nostrServiceProvider);
 
+  // Emit immediately so status-dependent UI does not wait for the first poll.
+  yield nostrService.connectionStatus;
+
   // Poll connection status every 5 seconds
-  return Stream.periodic(
+  yield* Stream.periodic(
     const Duration(seconds: 5),
     (_) => nostrService.connectionStatus,
   );

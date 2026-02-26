@@ -11,7 +11,7 @@ class DatabaseService {
   final String? _dbPathOverride;
 
   static const _dbName = 'iris_chat.db';
-  static const _dbVersion = 6;
+  static const _dbVersion = 7;
 
   /// Get the database instance, initializing if necessary.
   Future<Database> get database {
@@ -111,7 +111,8 @@ class DatabaseService {
         accepted INTEGER DEFAULT 0,
         last_message_at INTEGER,
         last_message_preview TEXT,
-        unread_count INTEGER DEFAULT 0
+        unread_count INTEGER DEFAULT 0,
+        message_ttl_seconds INTEGER
       )
     ''');
 
@@ -213,7 +214,8 @@ class DatabaseService {
           accepted INTEGER DEFAULT 0,
           last_message_at INTEGER,
           last_message_preview TEXT,
-          unread_count INTEGER DEFAULT 0
+          unread_count INTEGER DEFAULT 0,
+          message_ttl_seconds INTEGER
         )
       ''');
       await db.execute(
@@ -261,6 +263,13 @@ class DatabaseService {
       await db.execute(
         'CREATE INDEX idx_group_messages_expires_at ON group_messages (expires_at)',
       );
+    }
+    if (oldVersion < 7) {
+      try {
+        await db.execute(
+          'ALTER TABLE groups ADD COLUMN message_ttl_seconds INTEGER',
+        );
+      } catch (_) {}
     }
   }
 

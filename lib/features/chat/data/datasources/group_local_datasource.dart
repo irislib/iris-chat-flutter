@@ -61,6 +61,7 @@ class GroupLocalDatasource {
     String? lastMessagePreview,
     int? unreadCount,
     bool? accepted,
+    int? messageTtlSeconds,
   }) async {
     final db = await _db;
     final updates = <String, dynamic>{};
@@ -75,6 +76,11 @@ class GroupLocalDatasource {
     }
     if (accepted != null) {
       updates['accepted'] = accepted ? 1 : 0;
+    }
+    if (messageTtlSeconds != null) {
+      updates['message_ttl_seconds'] = messageTtlSeconds > 0
+          ? messageTtlSeconds
+          : null;
     }
     if (updates.isNotEmpty) {
       await db.update('groups', updates, where: 'id = ?', whereArgs: [id]);
@@ -155,6 +161,7 @@ class GroupLocalDatasource {
           : null,
       lastMessagePreview: map['last_message_preview'] as String?,
       unreadCount: map['unread_count'] as int? ?? 0,
+      messageTtlSeconds: map['message_ttl_seconds'] as int?,
     );
   }
 
@@ -172,6 +179,7 @@ class GroupLocalDatasource {
       'last_message_at': group.lastMessageAt?.millisecondsSinceEpoch,
       'last_message_preview': group.lastMessagePreview,
       'unread_count': group.unreadCount,
+      'message_ttl_seconds': group.messageTtlSeconds,
     };
   }
 }

@@ -24,7 +24,7 @@ class IrisBrandTitle extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        const Text('iris'),
+        const Text('iris chat'),
       ],
     );
   }

@@ -101,7 +101,9 @@ void main() {
     when(
       () => mockSessions.getSessionByRecipient(any()),
     ).thenAnswer((_) => completer.future);
-    when(() => mockSessions.insertSessionIfAbsent(any())).thenAnswer((_) async {});
+    when(
+      () => mockSessions.insertSessionIfAbsent(any()),
+    ).thenAnswer((_) async {});
 
     final npub = nostr.Nip19.encodePubkey(testPubkeyHex) as String;
     // Some sources copy these links with a newline between origin and fragment.
@@ -247,5 +249,63 @@ void main() {
 
     expect(notifier.createCalls, 1);
     expect(notifier.lastLabel, 'Invite #2');
+  });
+
+  testWidgets('shows back button when pushed from chats route', (tester) async {
+    final mockInvites = _MockInviteLocalDatasource();
+    final mockSessions = _MockSessionLocalDatasource();
+    final mockProfiles = _MockProfileService();
+
+    when(mockInvites.getActiveInvites).thenAnswer(
+      (_) async => [
+        Invite(
+          id: 'existing',
+          inviterPubkeyHex: 'pubkey',
+          createdAt: DateTime(2026, 1, 1),
+          serializedState: '{}',
+        ),
+      ],
+    );
+
+    final router = GoRouter(
+      initialLocation: '/chats',
+      routes: [
+        GoRoute(
+          path: '/chats',
+          builder: (context, state) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => context.push('/chats/new'),
+                child: const Text('Open New Chat'),
+              ),
+            ),
+          ),
+        ),
+        GoRoute(
+          path: '/chats/new',
+          builder: (context, state) => const NewChatScreen(),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      createTestRouterApp(
+        router,
+        overrides: [
+          inviteDatasourceProvider.overrideWithValue(mockInvites),
+          sessionStateProvider.overrideWith((ref) {
+            final notifier = SessionNotifier(mockSessions, mockProfiles);
+            notifier.state = const SessionState(sessions: []);
+            return notifier;
+          }),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open New Chat'));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 }

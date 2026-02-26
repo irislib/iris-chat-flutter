@@ -45,6 +45,9 @@ abstract class ChatGroup with _$ChatGroup {
 
     /// Number of unread messages.
     @Default(0) int unreadCount,
+
+    /// Per-group disappearing messages TTL in seconds.
+    int? messageTtlSeconds,
   }) = _ChatGroup;
 
   const ChatGroup._();
@@ -52,4 +55,3 @@ abstract class ChatGroup with _$ChatGroup {
   factory ChatGroup.fromJson(Map<String, dynamic> json) =>
       _$ChatGroupFromJson(json);
 }
-

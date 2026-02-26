@@ -474,23 +474,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     return Scaffold(
       appBar: AppBar(
         leading: const ChatsBackButton(),
-        title: Text(sessionDisplayName),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.timer_outlined),
-            tooltip: 'Disappearing messages',
-            onPressed: () => _showDisappearingMessages(context, session),
+        title: InkWell(
+          key: const Key('chat-header-info-button'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => _showSessionInfo(
+            context,
+            session,
+            displayName: sessionDisplayName,
+            pictureUrl: sessionPicture,
           ),
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: () => _showSessionInfo(
-              context,
-              session,
-              displayName: sessionDisplayName,
-              pictureUrl: sessionPicture,
-            ),
+          child: Row(
+            children: [
+              ProfileAvatar(
+                pubkeyHex: session.recipientPubkeyHex,
+                displayName: sessionDisplayName,
+                pictureUrl: sessionPicture,
+                radius: 16,
+                backgroundColor: theme.colorScheme.primaryContainer,
+                foregroundTextColor: theme.colorScheme.onPrimaryContainer,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  sessionDisplayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
       body: Column(
         children: [
@@ -673,161 +686,155 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     String? pictureUrl,
   }) {
     final theme = Theme.of(context);
+    int? selectedTtl = session.messageTtlSeconds;
+    bool isSavingTtl = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          Future<void> applyTtl(int? ttlSeconds) async {
+            if (isSavingTtl) return;
+            final normalized = (ttlSeconds != null && ttlSeconds > 0)
+                ? ttlSeconds
+                : null;
+            if (selectedTtl == normalized) return;
+
+            setSheetState(() {
+              selectedTtl = normalized;
+              isSavingTtl = true;
+            });
+            await ref
+                .read(sessionStateProvider.notifier)
+                .setMessageTtlSeconds(session.id, normalized);
+            await ref
+                .read(chatStateProvider.notifier)
+                .sendChatSettingsSignal(session.id, normalized);
+            if (!context.mounted) return;
+            setSheetState(() {
+              isSavingTtl = false;
+            });
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ProfileAvatar(
-                      pubkeyHex: session.recipientPubkeyHex,
-                      displayName: displayName,
-                      pictureUrl: pictureUrl,
-                      radius: 28,
-                      backgroundColor: theme.colorScheme.primaryContainer,
-                      foregroundTextColor: theme.colorScheme.onPrimaryContainer,
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(displayName, style: theme.textTheme.titleLarge),
-                          const SizedBox(height: 4),
-                          Row(
+                    Row(
+                      children: [
+                        ProfileAvatar(
+                          pubkeyHex: session.recipientPubkeyHex,
+                          displayName: displayName,
+                          pictureUrl: pictureUrl,
+                          radius: 28,
+                          backgroundColor: theme.colorScheme.primaryContainer,
+                          foregroundTextColor:
+                              theme.colorScheme.onPrimaryContainer,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                Icons.lock,
-                                size: 14,
-                                color: theme.colorScheme.primary,
-                              ),
-                              const SizedBox(width: 4),
                               Text(
-                                'End-to-end encrypted',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.primary,
-                                ),
+                                displayName,
+                                style: theme.textTheme.titleLarge,
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.lock,
+                                    size: 14,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'End-to-end encrypted',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    _InfoRow(
+                      label: 'Public Key',
+                      value: formatPubkeyAsNpub(session.recipientPubkeyHex),
+                      copyable: true,
+                    ),
+                    const SizedBox(height: 12),
+                    _InfoRow(
+                      label: 'Session Created',
+                      value: formatDate(session.createdAt),
+                    ),
+                    if (session.inviteId != null) ...[
+                      const SizedBox(height: 12),
+                      _InfoRow(label: 'Invite ID', value: session.inviteId!),
+                    ],
+                    const SizedBox(height: 24),
+                    Text(
+                      'Disappearing messages',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'New messages will disappear after the selected time.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _ExpirationOptionTile(
+                      label: 'Off',
+                      selected: selectedTtl == null,
+                      onTap: isSavingTtl ? null : () => applyTtl(null),
+                    ),
+                    const Divider(),
+                    ..._expirationOptions.map((ttl) {
+                      return _ExpirationOptionTile(
+                        label: _ttlLabel(ttl),
+                        selected: selectedTtl == ttl,
+                        onTap: isSavingTtl ? null : () => applyTtl(ttl),
+                      );
+                    }),
+                    if (isSavingTtl)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Updating…',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                        label: const Text('Close'),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                _InfoRow(
-                  label: 'Public Key',
-                  value: formatPubkeyAsNpub(session.recipientPubkeyHex),
-                  copyable: true,
-                ),
-                const SizedBox(height: 12),
-                _InfoRow(
-                  label: 'Session Created',
-                  value: formatDate(session.createdAt),
-                ),
-                const SizedBox(height: 12),
-                _InfoRow(
-                  label: 'Disappearing messages',
-                  value: _ttlLabel(session.messageTtlSeconds),
-                ),
-                if (session.inviteId != null) ...[
-                  const SizedBox(height: 12),
-                  _InfoRow(label: 'Invite ID', value: session.inviteId!),
-                ],
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                    label: const Text('Close'),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showDisappearingMessages(BuildContext context, ChatSession session) {
-    final theme = Theme.of(context);
-    final current = session.messageTtlSeconds;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Disappearing messages',
-                  style: theme.textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'New messages will disappear after the selected time.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Current: ${_ttlLabel(current)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _ExpirationOptionTile(
-                  label: 'Off',
-                  selected: current == null,
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await ref
-                        .read(sessionStateProvider.notifier)
-                        .setMessageTtlSeconds(session.id, null);
-                    await ref
-                        .read(chatStateProvider.notifier)
-                        .sendChatSettingsSignal(session.id, null);
-                  },
-                ),
-                const Divider(),
-                ..._expirationOptions.map((ttl) {
-                  return _ExpirationOptionTile(
-                    label: _ttlLabel(ttl),
-                    selected: current == ttl,
-                    onTap: () async {
-                      Navigator.pop(context);
-                      await ref
-                          .read(sessionStateProvider.notifier)
-                          .setMessageTtlSeconds(session.id, ttl);
-                      await ref
-                          .read(chatStateProvider.notifier)
-                          .sendChatSettingsSignal(session.id, ttl);
-                    },
-                  );
-                }),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -987,7 +994,7 @@ class _ExpirationOptionTile extends StatelessWidget {
 
   final String label;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

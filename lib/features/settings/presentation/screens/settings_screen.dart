@@ -279,6 +279,15 @@ class SettingsScreen extends ConsumerWidget {
 
           // Media section
           const _SectionHeader(title: 'Media'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'These settings are used when loading profile pictures.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
           SwitchListTile(
             key: const ValueKey('settings_imgproxy_enabled'),
             secondary: const Icon(Icons.image),
@@ -443,12 +452,14 @@ class SettingsScreen extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       IconButton(
+                        key: ValueKey('relay-edit-$relayUrl'),
                         icon: const Icon(Icons.edit),
                         tooltip: 'Edit relay',
                         onPressed: () =>
                             _showEditRelayDialog(context, ref, relayUrl),
                       ),
                       IconButton(
+                        key: ValueKey('relay-delete-$relayUrl'),
                         icon: const Icon(Icons.delete_outline),
                         tooltip: canDelete
                             ? 'Delete relay'

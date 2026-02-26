@@ -21,6 +21,8 @@ class GroupMetadata {
     this.description,
     this.picture,
     this.secret,
+    required this.hasMessageTtlSeconds,
+    this.messageTtlSeconds,
   });
 
   final String id;
@@ -30,13 +32,11 @@ class GroupMetadata {
   final List<String> members;
   final List<String> admins;
   final String? secret;
+  final bool hasMessageTtlSeconds;
+  final int? messageTtlSeconds;
 }
 
-enum MetadataValidation {
-  accept,
-  reject,
-  removed,
-}
+enum MetadataValidation { accept, reject, removed }
 
 bool isGroupAdmin(ChatGroup group, String pubkeyHex) {
   return group.admins.contains(pubkeyHex);
@@ -87,15 +87,20 @@ ChatGroup createGroupData({
   );
 }
 
-String buildGroupMetadataContent(ChatGroup group, {bool excludeSecret = false}) {
+String buildGroupMetadataContent(
+  ChatGroup group, {
+  bool excludeSecret = false,
+}) {
   final m = <String, Object?>{
     'id': group.id,
     'name': group.name,
     'members': group.members,
     'admins': group.admins,
+    'message_ttl_seconds': group.messageTtlSeconds,
     if (group.description != null && group.description!.isNotEmpty)
       'description': group.description,
-    if (group.picture != null && group.picture!.isNotEmpty) 'picture': group.picture,
+    if (group.picture != null && group.picture!.isNotEmpty)
+      'picture': group.picture,
     if (!excludeSecret && group.secret != null && group.secret!.isNotEmpty)
       'secret': group.secret,
   };
@@ -134,10 +139,27 @@ GroupMetadata? parseGroupMetadata(String content) {
     final description = decoded['description'] is String
         ? (decoded['description'] as String)
         : null;
-    final picture =
-        decoded['picture'] is String ? (decoded['picture'] as String) : null;
-    final secret =
-        decoded['secret'] is String ? (decoded['secret'] as String) : null;
+    final picture = decoded['picture'] is String
+        ? (decoded['picture'] as String)
+        : null;
+    final secret = decoded['secret'] is String
+        ? (decoded['secret'] as String)
+        : null;
+    final hasMessageTtlSeconds = decoded.containsKey('message_ttl_seconds');
+    final dynamic rawMessageTtlSeconds = decoded['message_ttl_seconds'];
+    int? messageTtlSeconds;
+    if (rawMessageTtlSeconds == null) {
+      messageTtlSeconds = null;
+    } else if (rawMessageTtlSeconds is int) {
+      messageTtlSeconds = rawMessageTtlSeconds;
+    } else if (rawMessageTtlSeconds is num) {
+      messageTtlSeconds = rawMessageTtlSeconds.toInt();
+    } else {
+      return null;
+    }
+    if (messageTtlSeconds != null && messageTtlSeconds <= 0) {
+      messageTtlSeconds = null;
+    }
 
     return GroupMetadata(
       id: id,
@@ -147,6 +169,8 @@ GroupMetadata? parseGroupMetadata(String content) {
       description: description,
       picture: picture,
       secret: secret,
+      hasMessageTtlSeconds: hasMessageTtlSeconds,
+      messageTtlSeconds: messageTtlSeconds,
     );
   } catch (_) {
     return null;
@@ -190,6 +214,8 @@ ChatGroup applyMetadataUpdate({
     picture: metadata.picture,
     // Preserve existing secret if update omitted it.
     secret: metadata.secret ?? existing.secret,
+    messageTtlSeconds: metadata.hasMessageTtlSeconds
+        ? metadata.messageTtlSeconds
+        : existing.messageTtlSeconds,
   );
 }
-

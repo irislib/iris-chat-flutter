@@ -1,13 +1,19 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
+import '../../../../config/providers/hashtree_attachment_provider.dart';
 import '../../../../shared/utils/formatters.dart';
 import '../../domain/models/group.dart';
 import '../../domain/models/session.dart';
+import '../../domain/utils/chat_settings.dart';
+import '../utils/attachment_upload.dart';
 import '../widgets/chats_back_button.dart';
+import '../widgets/group_avatar.dart';
+import '../widgets/profile_name_text.dart';
 
 class GroupInfoScreen extends ConsumerStatefulWidget {
   const GroupInfoScreen({super.key, required this.groupId});
@@ -20,6 +26,15 @@ class GroupInfoScreen extends ConsumerStatefulWidget {
 
 class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   final Set<String> _selectedToAdd = <String>{};
+  bool _isUploadingPicture = false;
+  static const _expirationOptions = <int>[
+    5 * 60,
+    60 * 60,
+    24 * 60 * 60,
+    7 * 24 * 60 * 60,
+    30 * 24 * 60 * 60,
+    90 * 24 * 60 * 60,
+  ];
 
   bool _containsPubkey(List<String> pubkeys, String? target) {
     final normalized = target?.toLowerCase().trim();
@@ -152,6 +167,95 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
+  Future<void> _setGroupTtl(ChatGroup group, int? ttlSeconds) async {
+    await ref
+        .read(groupStateProvider.notifier)
+        .setGroupMessageTtlSeconds(widget.groupId, ttlSeconds);
+    if (!mounted) return;
+
+    final error = ref.read(groupStateProvider).error;
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+
+    final label = chatSettingsTtlLabel(ttlSeconds);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Disappearing messages: $label')));
+  }
+
+  Future<void> _setGroupPicture(ChatGroup group, String? picture) async {
+    await ref
+        .read(groupStateProvider.notifier)
+        .setGroupPicture(widget.groupId, picture);
+    if (!mounted) return;
+
+    final error = ref.read(groupStateProvider).error;
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+
+    final action = picture == null ? 'removed' : 'updated';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Group image $action')));
+  }
+
+  Future<void> _pickGroupPicture(ChatGroup group) async {
+    if (_isUploadingPicture) return;
+
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: true,
+        type: FileType.image,
+      );
+    } on MissingPluginException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Image picker is unavailable on this platform.'),
+        ),
+      );
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to open image picker: $e')),
+      );
+      return;
+    }
+    if (picked == null || picked.files.isEmpty) return;
+
+    final pickedFile = picked.files.first;
+    setState(() => _isUploadingPicture = true);
+    try {
+      final attachmentService = ref.read(hashtreeAttachmentServiceProvider);
+      final prepared = await preparePickedAttachment(
+        pickedFile: pickedFile,
+        service: attachmentService,
+      );
+      await attachmentService.uploadPreparedAttachment(prepared);
+
+      final pictureUri = 'nhash://${prepared.link}';
+      await _setGroupPicture(group, pictureUri);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Group image upload failed: $e')));
+    } finally {
+      if (mounted) setState(() => _isUploadingPicture = false);
+    }
+  }
+
   ChatGroup? _findGroup(List<ChatGroup> groups) {
     for (final g in groups) {
       if (g.id == widget.groupId) return g;
@@ -207,27 +311,82 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Group Name',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    group.name,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: [
+                      GroupAvatar(
+                        groupName: group.name,
+                        picture: group.picture,
+                        radius: 28,
+                        backgroundColor: theme.colorScheme.secondaryContainer,
+                        iconColor: theme.colorScheme.onSecondaryContainer,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Group Name',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              group.name,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   if (isAdmin) ...[
                     const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: () => _showRenameDialog(group),
-                        icon: const Icon(Icons.drive_file_rename_outline),
-                        label: const Text('Edit Name'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        TextButton.icon(
+                          onPressed: () => _showRenameDialog(group),
+                          icon: const Icon(Icons.drive_file_rename_outline),
+                          label: const Text('Edit Name'),
+                        ),
+                        TextButton.icon(
+                          onPressed: _isUploadingPicture
+                              ? null
+                              : () => _pickGroupPicture(group),
+                          icon: _isUploadingPicture
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.photo_camera_outlined),
+                          label: const Text('Change Photo'),
+                        ),
+                        if (group.picture != null &&
+                            group.picture!.trim().isNotEmpty)
+                          TextButton.icon(
+                            onPressed: _isUploadingPicture
+                                ? null
+                                : () => _setGroupPicture(group, null),
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Remove Photo'),
+                          ),
+                      ],
+                    ),
+                  ] else if (group.picture != null &&
+                      group.picture!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Group image is shared with members via encrypted metadata.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -301,9 +460,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                               }
                             });
                           },
-                          title: Text(s.displayName),
-                          subtitle: Text(
-                            formatPubkeyForDisplay(s.recipientPubkeyHex),
+                          title: ProfileNameText(
+                            pubkeyHex: s.recipientPubkeyHex,
+                            fallbackName: s.displayName,
                           ),
                           dense: true,
                         ),
@@ -322,8 +481,83 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               ),
             ),
           ],
+          const SizedBox(height: 24),
+          Text(
+            'Disappearing Messages',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                children: [
+                  ListTile(
+                    title: const Text('Current'),
+                    trailing: Text(
+                      chatSettingsTtlLabel(group.messageTtlSeconds),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  _DisappearingOptionTile(
+                    label: 'Off',
+                    selected: group.messageTtlSeconds == null,
+                    onTap: isAdmin ? () => _setGroupTtl(group, null) : null,
+                  ),
+                  for (final ttl in _expirationOptions)
+                    _DisappearingOptionTile(
+                      label: chatSettingsTtlLabel(ttl),
+                      selected: group.messageTtlSeconds == ttl,
+                      onTap: isAdmin ? () => _setGroupTtl(group, ttl) : null,
+                    ),
+                  if (!isAdmin)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                      child: Text(
+                        'Only group admins can change this setting.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _DisappearingOptionTile extends StatelessWidget {
+  const _DisappearingOptionTile({
+    required this.label,
+    required this.selected,
+    this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      title: Text(label),
+      dense: true,
+      trailing: selected
+          ? Icon(Icons.check, color: theme.colorScheme.primary)
+          : null,
+      onTap: onTap,
     );
   }
 }

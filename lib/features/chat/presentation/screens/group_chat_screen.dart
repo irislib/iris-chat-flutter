@@ -18,6 +18,7 @@ import '../utils/attachment_upload.dart';
 import '../utils/seen_sync_mixin.dart';
 import '../widgets/chat_message_bubble.dart';
 import '../widgets/chats_back_button.dart';
+import '../widgets/group_avatar.dart';
 import '../widgets/message_input.dart';
 import '../widgets/typing_dots.dart';
 
@@ -382,18 +383,37 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         body: const Center(child: CircularProgressIndicator()),
       );
     }
+    final activeGroup = group;
 
     return Scaffold(
       appBar: AppBar(
         leading: const ChatsBackButton(),
-        title: Text(group.name),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            tooltip: 'Group info',
-            onPressed: () => context.push('/groups/${group!.id}/info'),
+        title: InkWell(
+          key: const Key('group-header-info-button'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => context.push('/groups/${activeGroup.id}/info'),
+          child: Row(
+            children: [
+              GroupAvatar(
+                groupName: activeGroup.name,
+                picture: activeGroup.picture,
+                radius: 16,
+                backgroundColor: theme.colorScheme.secondaryContainer,
+                iconColor: theme.colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  activeGroup.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
-          if (!group.accepted)
+        ),
+        actions: [
+          if (!activeGroup.accepted)
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Center(

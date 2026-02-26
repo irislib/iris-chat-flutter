@@ -161,11 +161,24 @@ void main() {
         expect(find.text('End-to-end encrypted'), findsAtLeastNWidgets(1));
       });
 
-      testWidgets('shows info button', (tester) async {
+      testWidgets('shows tappable header info area', (tester) async {
         await tester.pumpWidget(buildChatScreen());
         await tester.pumpAndSettle();
 
-        expect(find.byIcon(Icons.info_outline), findsOneWidget);
+        expect(
+          find.byKey(const Key('chat-header-info-button')),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('does not show separate info or timer action icons', (
+        tester,
+      ) async {
+        await tester.pumpWidget(buildChatScreen());
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.info_outline), findsNothing);
+        expect(find.byIcon(Icons.timer_outlined), findsNothing);
       });
 
       testWidgets('shows unseen badge on back button when unread exists', (
@@ -507,7 +520,7 @@ void main() {
         await tester.pumpWidget(buildChatScreen());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.info_outline));
+        await tester.tap(find.byKey(const Key('chat-header-info-button')));
         await tester.pumpAndSettle();
 
         expect(find.text('Public Key'), findsOneWidget);
@@ -519,7 +532,7 @@ void main() {
         await tester.pumpWidget(buildChatScreen());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.info_outline));
+        await tester.tap(find.byKey(const Key('chat-header-info-button')));
         await tester.pumpAndSettle();
 
         // Alice should appear in both app bar and dialog
@@ -530,18 +543,31 @@ void main() {
         await tester.pumpWidget(buildChatScreen());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.info_outline));
+        await tester.tap(find.byKey(const Key('chat-header-info-button')));
         await tester.pumpAndSettle();
 
         // "End-to-end encrypted" appears in dialog (may also appear in app bar)
         expect(find.text('End-to-end encrypted'), findsAtLeastNWidgets(1));
       });
 
+      testWidgets('shows disappearing message options in info sheet', (
+        tester,
+      ) async {
+        await tester.pumpWidget(buildChatScreen());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('chat-header-info-button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Disappearing messages'), findsOneWidget);
+        expect(find.text('Off'), findsOneWidget);
+      });
+
       testWidgets('shows npub public key in dialog', (tester) async {
         await tester.pumpWidget(buildChatScreen());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.info_outline));
+        await tester.tap(find.byKey(const Key('chat-header-info-button')));
         await tester.pumpAndSettle();
 
         final expectedNpub =
@@ -553,7 +579,7 @@ void main() {
         await tester.pumpWidget(buildChatScreen());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.info_outline));
+        await tester.tap(find.byKey(const Key('chat-header-info-button')));
         await tester.pumpAndSettle();
 
         expect(find.text('Close'), findsOneWidget);
@@ -563,9 +589,10 @@ void main() {
         await tester.pumpWidget(buildChatScreen());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byIcon(Icons.info_outline));
+        await tester.tap(find.byKey(const Key('chat-header-info-button')));
         await tester.pumpAndSettle();
 
+        await tester.ensureVisible(find.text('Close'));
         await tester.tap(find.text('Close'));
         await tester.pumpAndSettle();
 
