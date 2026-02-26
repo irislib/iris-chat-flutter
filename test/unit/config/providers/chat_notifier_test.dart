@@ -93,6 +93,14 @@ void main() {
         status: MessageStatus.pending,
       ),
     );
+    registerFallbackValue(
+      ChatSession(
+        id: 'fallback-session',
+        recipientPubkeyHex:
+            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+      ),
+    );
     registerFallbackValue(MessageStatus.pending);
   });
 
@@ -926,6 +934,49 @@ void main() {
               MessageStatus.seen,
             ),
           ).called(1);
+        },
+      );
+
+      test(
+        'routes self-chat rumor to owner session instead of dropping it',
+        () async {
+          const ownerPubkey =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+
+          when(
+            () => mockSessionManagerService.ownerPubkeyHex,
+          ).thenReturn(ownerPubkey);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(ownerPubkey),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockSessionDatasource.saveSession(any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockMessageDatasource.saveMessage(any()),
+          ).thenAnswer((_) async {});
+
+          const selfRumorJson =
+              '{"id":"self-msg-1","pubkey":"$ownerPubkey","created_at":1700000003,"kind":14,"content":"hello self","tags":[["p","$ownerPubkey"]]}';
+
+          final received = await notifier.receiveDecryptedMessage(
+            ownerPubkey,
+            selfRumorJson,
+          );
+
+          expect(received, isNotNull);
+          expect(received!.sessionId, ownerPubkey);
+          expect(received.isOutgoing, isTrue);
+          expect(notifier.state.messages[ownerPubkey], isNotNull);
+          expect(
+            notifier.state.messages[ownerPubkey]!.single.text,
+            'hello self',
+          );
+          verify(() => mockSessionDatasource.saveSession(any())).called(1);
+          verify(() => mockMessageDatasource.saveMessage(any())).called(1);
         },
       );
 

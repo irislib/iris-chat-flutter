@@ -593,6 +593,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }) async {
     final owner = ownerPubkeyHex?.toLowerCase().trim();
     final sender = senderPubkeyHex.toLowerCase().trim();
+    final rumorAuthor = rumor.pubkey.toLowerCase().trim();
+    final pTagPubkey = getFirstTagValue(rumor.tags, 'p')?.toLowerCase().trim();
+
+    final isSelfTargetedRumor =
+        owner != null &&
+        rumorAuthor == owner &&
+        (pTagPubkey == null || pTagPubkey.isEmpty || pTagPubkey == owner);
+    if (isSelfTargetedRumor) {
+      return owner;
+    }
 
     final rumorPeer = owner != null
         ? resolveRumorPeerPubkey(ownerPubkeyHex: owner, rumor: rumor)
