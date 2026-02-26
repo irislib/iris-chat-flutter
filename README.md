@@ -39,28 +39,39 @@ flutter build apk --release
 flutter build ios --release
 ```
 
-## GitHub Release Code Signing (Optional)
+## GitHub Release Signing (Optional)
 
-The release workflow signs macOS artifacts only when the GitHub Actions variable
-`MACOS_SIGNING_ENABLED` is set to `true` and signing secrets are present.
-If not enabled, the workflow still builds and publishes unsigned artifacts.
+The release workflow can sign macOS and Android artifacts when enabled with GitHub
+Actions variables plus matching secrets. If signing is not enabled, release artifacts
+are still built and published unsigned.
 
-Variables:
+macOS variables:
 
-- `MACOS_SIGNING_ENABLED=true` to enable signing
+- `MACOS_SIGNING_ENABLED=true` to enable code signing
 - `MACOS_NOTARIZATION_ENABLED=true` to enable notarization
 
-Required secrets for macOS signing:
+Required macOS signing secrets:
 
 - `MACOS_SIGNING_IDENTITY` (for example: `Developer ID Application: Example Corp (TEAMID)`)
 - `MACOS_CERTIFICATE_P12` (base64-encoded `.p12` that includes private key)
 - `MACOS_CERTIFICATE_PASSWORD`
 
-Optional secrets for notarization (used only when `MACOS_NOTARIZATION_ENABLED=true`):
+Optional macOS notarization secrets (used only when `MACOS_NOTARIZATION_ENABLED=true`):
 
 - `MACOS_NOTARIZE_APPLE_ID`
 - `MACOS_NOTARIZE_APP_PASSWORD` (app-specific password)
 - `MACOS_NOTARIZE_TEAM_ID`
+
+Android variable:
+
+- `ANDROID_SIGNING_ENABLED=true` to enable release keystore signing
+
+Required Android signing secrets:
+
+- `ANDROID_KEYSTORE_B64` (base64-encoded `.jks`/`.keystore`)
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
 
 ## Development
 
