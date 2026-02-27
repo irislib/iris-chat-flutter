@@ -81,7 +81,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (latestCandidate == null || latestCandidate != nsecCandidate) return;
 
       _lastAutoSubmittedNsec = nsecCandidate;
-      unawaited(_login());
+      unawaited(_login(skipDeviceRegistrationPrompt: true));
     });
   }
 
@@ -127,7 +127,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _login() async {
+  Future<void> _login({bool skipDeviceRegistrationPrompt = false}) async {
     final key = _keyController.text.trim();
     if (key.isEmpty) return;
 
@@ -137,14 +137,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     LoginDeviceRegistrationPreview? preview;
     var shouldRegisterDevice = false;
-    try {
-      preview = await registrationService.buildPreviewFromPrivateKeyNsec(key);
-      if (!mounted) return;
-      final decision = await _showDeviceRegistrationDialog(preview);
-      if (decision == null) return;
-      shouldRegisterDevice = decision;
-    } catch (_) {
-      // Allow auth flow to surface invalid key / storage errors.
+    if (!skipDeviceRegistrationPrompt) {
+      try {
+        preview = await registrationService.buildPreviewFromPrivateKeyNsec(key);
+        if (!mounted) return;
+        final decision = await _showDeviceRegistrationDialog(preview);
+        if (decision == null) return;
+        shouldRegisterDevice = decision;
+      } catch (_) {
+        // Allow auth flow to surface invalid key / storage errors.
+      }
     }
 
     await ref.read(authStateProvider.notifier).login(key);

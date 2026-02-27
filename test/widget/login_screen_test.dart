@@ -417,10 +417,12 @@ void main() {
           await tester.enterText(find.byType(TextField), nsec);
           await tester.pumpAndSettle();
 
-          expect(find.text('Register This Device?'), findsOneWidget);
-          await tester.tap(find.text('Sign In Without Registering'));
-          await tester.pumpAndSettle();
-
+          expect(find.text('Register This Device?'), findsNothing);
+          expect(find.text('Chats Screen'), findsOneWidget);
+          verifyNever(
+            () => mockLoginDeviceRegistrationService
+                .buildPreviewFromPrivateKeyNsec(any()),
+          );
           verify(() => mockAuthRepo.login(nsec)).called(1);
         },
       );
