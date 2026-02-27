@@ -67,31 +67,49 @@ void main() {
   Widget buildChatScreen({
     List<ChatMessage> messages = const [],
     ChatSession? session,
+    List<ChatSession>? sessions,
+    String sessionId = testSessionId,
+    Map<String, List<ChatMessage>>? messagesBySession,
     void Function(SessionNotifier notifier)? onSessionNotifierCreated,
     String? profilePictureUrl,
   }) {
     final effectiveSession = session ?? testSession;
+    final effectiveSessions = sessions ?? [effectiveSession];
     final profileService = ProfileService(mockNostrService);
-    profileService.upsertProfile(
-      pubkey: effectiveSession.recipientPubkeyHex,
-      displayName: effectiveSession.recipientName,
-      picture: profilePictureUrl,
-      updatedAt: DateTime(2026, 2, 1),
-    );
+    for (final chatSession in effectiveSessions) {
+      profileService.upsertProfile(
+        pubkey: chatSession.recipientPubkeyHex,
+        displayName: chatSession.recipientName,
+        picture: profilePictureUrl,
+        updatedAt: DateTime(2026, 2, 1),
+      );
+    }
 
     when(
       () => mockSessionDatasource.getAllSessions(),
-    ).thenAnswer((_) async => [effectiveSession]);
-    when(
-      () => mockSessionDatasource.getSession(any()),
-    ).thenAnswer((_) async => effectiveSession);
+    ).thenAnswer((_) async => effectiveSessions);
+    when(() => mockSessionDatasource.getSession(any())).thenAnswer((
+      invocation,
+    ) async {
+      final requestedSessionId = invocation.positionalArguments.first as String;
+      for (final chatSession in effectiveSessions) {
+        if (chatSession.id == requestedSessionId) return chatSession;
+      }
+      return effectiveSession;
+    });
     when(
       () => mockMessageDatasource.getMessagesForSession(
         any(),
         limit: any(named: 'limit'),
         beforeId: any(named: 'beforeId'),
       ),
-    ).thenAnswer((_) async => messages);
+    ).thenAnswer((invocation) async {
+      final requestedSessionId = invocation.positionalArguments.first as String;
+      if (messagesBySession != null) {
+        return messagesBySession[requestedSessionId] ?? const <ChatMessage>[];
+      }
+      return messages;
+    });
     when(
       () => mockMessageDatasource.updateIncomingStatusByRumorId(any(), any()),
     ).thenAnswer((_) async {});
@@ -128,7 +146,7 @@ void main() {
     ).thenAnswer((_) async {});
 
     return createTestApp(
-      const ChatScreen(sessionId: testSessionId),
+      ChatScreen(sessionId: sessionId),
       overrides: [
         sessionDatasourceProvider.overrideWithValue(mockSessionDatasource),
         messageDatasourceProvider.overrideWithValue(mockMessageDatasource),
@@ -144,7 +162,7 @@ void main() {
           );
           // Pre-populate the sessions
           notifier.state = SessionState(
-            sessions: [effectiveSession],
+            sessions: effectiveSessions,
             isLoading: false,
           );
           onSessionNotifierCreated?.call(notifier);
@@ -627,6 +645,138 @@ void main() {
           find.byKey(const ValueKey('chat_attachment_image_viewer')),
           findsOneWidget,
         );
+      });
+    });
+
+    group('session switching', () {
+      testWidgets('reloads message history when sessionId changes', (
+        tester,
+      ) async {
+        const secondSessionId = 'second-session-456';
+        final secondSession = ChatSession(
+          id: secondSessionId,
+          recipientPubkeyHex:
+              '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+          recipientName: 'Bob',
+          createdAt: DateTime.now(),
+          isInitiator: false,
+        );
+
+        final firstSessionMessage = ChatMessage(
+          id: 'first-msg',
+          sessionId: testSessionId,
+          text: 'Message from first chat',
+          timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
+          direction: MessageDirection.incoming,
+          status: MessageStatus.delivered,
+        );
+        final secondSessionMessage = ChatMessage(
+          id: 'second-msg',
+          sessionId: secondSessionId,
+          text: 'Message from second chat',
+          timestamp: DateTime.now(),
+          direction: MessageDirection.incoming,
+          status: MessageStatus.delivered,
+        );
+
+        when(
+          () => mockSessionDatasource.getAllSessions(),
+        ).thenAnswer((_) async => [testSession, secondSession]);
+        when(() => mockSessionDatasource.getSession(any())).thenAnswer((
+          invocation,
+        ) async {
+          final sessionId = invocation.positionalArguments.first as String;
+          return sessionId == secondSessionId ? secondSession : testSession;
+        });
+        when(
+          () => mockMessageDatasource.getMessagesForSession(
+            any(),
+            limit: any(named: 'limit'),
+            beforeId: any(named: 'beforeId'),
+          ),
+        ).thenAnswer((invocation) async {
+          final sessionId = invocation.positionalArguments.first as String;
+          return sessionId == secondSessionId
+              ? [secondSessionMessage]
+              : [firstSessionMessage];
+        });
+        when(
+          () =>
+              mockMessageDatasource.updateIncomingStatusByRumorId(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockSessionManagerService.sendReceipt(
+            recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+            receiptType: any(named: 'receiptType'),
+            messageIds: any(named: 'messageIds'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockSessionManagerService.sendTyping(
+            recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+            expiresAtSeconds: any(named: 'expiresAtSeconds'),
+          ),
+        ).thenAnswer((_) async {});
+
+        final profileService = ProfileService(mockNostrService)
+          ..upsertProfile(
+            pubkey: testSession.recipientPubkeyHex,
+            displayName: testSession.recipientName,
+            updatedAt: DateTime(2026, 2, 1),
+          )
+          ..upsertProfile(
+            pubkey: secondSession.recipientPubkeyHex,
+            displayName: secondSession.recipientName,
+            updatedAt: DateTime(2026, 2, 1),
+          );
+
+        final activeSessionId = ValueNotifier<String>(testSessionId);
+        addTearDown(activeSessionId.dispose);
+
+        await tester.pumpWidget(
+          createTestApp(
+            ValueListenableBuilder<String>(
+              valueListenable: activeSessionId,
+              builder: (context, sessionId, _) {
+                return ChatScreen(sessionId: sessionId);
+              },
+            ),
+            overrides: [
+              sessionDatasourceProvider.overrideWithValue(
+                mockSessionDatasource,
+              ),
+              messageDatasourceProvider.overrideWithValue(
+                mockMessageDatasource,
+              ),
+              nostrServiceProvider.overrideWithValue(mockNostrService),
+              sessionManagerServiceProvider.overrideWithValue(
+                mockSessionManagerService,
+              ),
+              profileServiceProvider.overrideWithValue(profileService),
+              sessionStateProvider.overrideWith((ref) {
+                final notifier = SessionNotifier(
+                  mockSessionDatasource,
+                  profileService,
+                );
+                notifier.state = SessionState(
+                  sessions: [testSession, secondSession],
+                  isLoading: false,
+                );
+                return notifier;
+              }),
+            ],
+          ),
+        );
+
+        await tester.pumpAndSettle();
+        expect(find.text('Message from first chat'), findsOneWidget);
+        expect(find.text('Message from second chat'), findsNothing);
+
+        activeSessionId.value = secondSessionId;
+        await tester.pumpAndSettle();
+
+        expect(find.text('Message from first chat'), findsNothing);
+        expect(find.text('Message from second chat'), findsOneWidget);
       });
     });
 
