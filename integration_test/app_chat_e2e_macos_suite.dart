@@ -73,11 +73,15 @@ class _AppInstance {
     required this.name,
     required this.container,
     required this.rootDir,
+    required this.secureStorage,
+    required this.deleteRootOnDispose,
   });
 
   final String name;
   final ProviderContainer container;
   final Directory rootDir;
+  final SecureStorageService secureStorage;
+  final bool deleteRootOnDispose;
 
   String get dbPath => '${rootDir.path}/db.sqlite';
   String get ndrPath => '${rootDir.path}/ndr';
@@ -94,9 +98,11 @@ class _AppInstance {
       await container.read(databaseServiceProvider).close();
     } catch (_) {}
     container.dispose();
-    try {
-      await rootDir.delete(recursive: true);
-    } catch (_) {}
+    if (deleteRootOnDispose) {
+      try {
+        await rootDir.delete(recursive: true);
+      } catch (_) {}
+    }
   }
 }
 
@@ -142,9 +148,16 @@ ProviderContainer _makeContainer({
 Future<_AppInstance> _startInstance({
   required String name,
   required String relayUrl,
+  Directory? rootDirOverride,
+  SecureStorageService? secureStorageOverride,
+  bool createIdentity = true,
+  bool restoreIdentity = false,
+  bool deleteRootOnDispose = true,
 }) async {
-  final rootDir = await Directory.systemTemp.createTemp('iris-chat-$name-');
-  final secureStorage = _createInMemorySecureStorage();
+  final rootDir =
+      rootDirOverride ??
+      await Directory.systemTemp.createTemp('iris-chat-$name-');
+  final secureStorage = secureStorageOverride ?? _createInMemorySecureStorage();
 
   final container = _makeContainer(
     relayUrl: relayUrl,
@@ -153,8 +166,17 @@ Future<_AppInstance> _startInstance({
     secureStorage: secureStorage,
   );
 
-  // Create identity before starting the session manager.
-  await container.read(authStateProvider.notifier).createIdentity();
+  // Create or restore identity before starting the session manager.
+  final authNotifier = container.read(authStateProvider.notifier);
+  if (restoreIdentity) {
+    await authNotifier.checkAuth();
+  } else if (createIdentity) {
+    await authNotifier.createIdentity();
+  }
+  final authState = container.read(authStateProvider);
+  if (!authState.isAuthenticated) {
+    throw StateError('Failed to initialize auth for instance $name');
+  }
 
   // Bring transport online.
   await container.read(nostrServiceProvider).connect();
@@ -166,7 +188,13 @@ Future<_AppInstance> _startInstance({
   // Start message + invite subscription bridge.
   container.read(messageSubscriptionProvider);
 
-  return _AppInstance(name: name, container: container, rootDir: rootDir);
+  return _AppInstance(
+    name: name,
+    container: container,
+    rootDir: rootDir,
+    secureStorage: secureStorage,
+    deleteRootOnDispose: deleteRootOnDispose,
+  );
 }
 
 Future<void> _pumpUntil({
@@ -490,6 +518,187 @@ void main() {
       await relay.stop();
     }
   });
+
+  testWidgets(
+    'reopen app keeps receiving messages and handles multiple ratchet rounds',
+    (tester) async {
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      if (!Platform.isMacOS) {
+        return;
+      }
+
+      final relay = await TestRelay.start();
+      final relayUrl = 'ws://127.0.0.1:${relay.port}';
+      final aliceRootDir = await Directory.systemTemp.createTemp(
+        'iris-chat-alice-reopen-',
+      );
+      final aliceStorage = _createInMemorySecureStorage();
+
+      _AppInstance? alice;
+      _AppInstance? bob;
+
+      try {
+        alice = await _startInstance(
+          name: 'alice-reopen',
+          relayUrl: relayUrl,
+          rootDirOverride: aliceRootDir,
+          secureStorageOverride: aliceStorage,
+          deleteRootOnDispose: false,
+        );
+        bob = await _startInstance(name: 'bob-reopen', relayUrl: relayUrl);
+
+        final aliceC = alice.container;
+        final bobC = bob.container;
+
+        final invite = await aliceC
+            .read(inviteStateProvider.notifier)
+            .createInvite(maxUses: 1);
+        expect(invite, isNotNull);
+
+        final inviteUrl = await aliceC
+            .read(inviteStateProvider.notifier)
+            .getInviteUrl(invite!.id);
+        expect(inviteUrl, isNotNull);
+
+        final data = decodeInviteUrlData(inviteUrl!);
+        final eph =
+            data?['ephemeralKey'] ??
+            data?['inviterEphemeralPublicKey'] ??
+            data?['inviterEphemeralPublicKeyHex'];
+        final inviteEph = eph is String ? eph : eph?.toString();
+        expect(
+          inviteEph,
+          isNotNull,
+          reason: 'Invite URL missing ephemeral key',
+        );
+
+        await _pumpUntil(
+          condition: () => relay.hasKindAndPTagSubscription(
+            kind: 1059,
+            pTagValue: inviteEph!,
+          ),
+          timeout: const Duration(seconds: 6),
+        );
+
+        final bobSessionId = await bobC
+            .read(inviteStateProvider.notifier)
+            .acceptInviteFromUrl(inviteUrl);
+        expect(bobSessionId, isNotNull);
+
+        final bobOwnerPubkey = bobC.read(authStateProvider).pubkeyHex;
+        expect(bobOwnerPubkey, isNotNull);
+
+        await _pumpUntil(
+          condition: () {
+            final sessions = aliceC.read(sessionStateProvider).sessions;
+            return sessions.any((s) => s.recipientPubkeyHex == bobOwnerPubkey);
+          },
+        );
+
+        var aliceSessionId = aliceC
+            .read(sessionStateProvider)
+            .sessions
+            .firstWhere((s) => s.recipientPubkeyHex == bobOwnerPubkey)
+            .id;
+
+        final beforeReopenText =
+            'pre-reopen bob->alice ${DateTime.now().millisecondsSinceEpoch}';
+        await bobC
+            .read(chatStateProvider.notifier)
+            .sendMessage(bobSessionId!, beforeReopenText);
+
+        await _pumpUntil(
+          condition: () {
+            final msgs =
+                aliceC.read(chatStateProvider).messages[aliceSessionId] ??
+                const [];
+            return msgs.any((m) => m.text == beforeReopenText && m.isIncoming);
+          },
+        );
+
+        await alice.dispose();
+        alice = await _startInstance(
+          name: 'alice-reopen',
+          relayUrl: relayUrl,
+          rootDirOverride: aliceRootDir,
+          secureStorageOverride: aliceStorage,
+          createIdentity: false,
+          restoreIdentity: true,
+          deleteRootOnDispose: false,
+        );
+
+        final reopenedAliceC = alice.container;
+        await reopenedAliceC.read(sessionStateProvider.notifier).loadSessions();
+
+        await _pumpUntil(
+          condition: () {
+            final sessions = reopenedAliceC.read(sessionStateProvider).sessions;
+            return sessions.any((s) => s.recipientPubkeyHex == bobOwnerPubkey);
+          },
+        );
+
+        aliceSessionId = reopenedAliceC
+            .read(sessionStateProvider)
+            .sessions
+            .firstWhere((s) => s.recipientPubkeyHex == bobOwnerPubkey)
+            .id;
+
+        for (var i = 1; i <= 3; i++) {
+          final bobToAlice =
+              'post-reopen bob->alice #$i ${DateTime.now().millisecondsSinceEpoch}';
+          await bobC
+              .read(chatStateProvider.notifier)
+              .sendMessage(bobSessionId, bobToAlice);
+
+          await _pumpUntil(
+            condition: () {
+              final msgs =
+                  reopenedAliceC
+                      .read(chatStateProvider)
+                      .messages[aliceSessionId] ??
+                  const [];
+              return msgs.any((m) => m.text == bobToAlice && m.isIncoming);
+            },
+            timeout: const Duration(seconds: 20),
+            debugOnTimeout: () {
+              return '--- reopened alice state ---\n${_describeChatState(reopenedAliceC)}\n'
+                  '--- bob state ---\n${_describeChatState(bobC)}\n'
+                  '--- relay ---\n${_describeRelayDrEvents(relay)}';
+            },
+          );
+
+          final aliceToBob =
+              'post-reopen alice->bob #$i ${DateTime.now().millisecondsSinceEpoch}';
+          await reopenedAliceC
+              .read(chatStateProvider.notifier)
+              .sendMessage(aliceSessionId, aliceToBob);
+
+          await _pumpUntil(
+            condition: () {
+              final msgs =
+                  bobC.read(chatStateProvider).messages[bobSessionId] ??
+                  const [];
+              return msgs.any((m) => m.text == aliceToBob && m.isIncoming);
+            },
+            timeout: const Duration(seconds: 20),
+            debugOnTimeout: () {
+              return '--- reopened alice state ---\n${_describeChatState(reopenedAliceC)}\n'
+                  '--- bob state ---\n${_describeChatState(bobC)}\n'
+                  '--- relay ---\n${_describeRelayDrEvents(relay)}';
+            },
+          );
+        }
+      } finally {
+        await alice?.dispose();
+        await bob?.dispose();
+        try {
+          await aliceRootDir.delete(recursive: true);
+        } catch (_) {}
+        await relay.stop();
+      }
+    },
+  );
 
   testWidgets('typing indicator appears in UI and hides on stop rumor', (
     tester,
