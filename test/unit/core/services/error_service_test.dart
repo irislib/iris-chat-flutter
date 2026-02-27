@@ -13,7 +13,9 @@ void main() {
       final mapped = AppError.from(error);
 
       expect(mapped.type, AppErrorType.validation);
-      expect(mapped.message, contains('created by this same device'));
+      expect(mapped.message, contains('same device key'));
+      expect(mapped.message, contains('same nsec'));
+      expect(mapped.message, contains('Link Device'));
       expect(mapped.isRetryable, isFalse);
     });
 
