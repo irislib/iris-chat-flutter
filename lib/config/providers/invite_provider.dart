@@ -463,19 +463,22 @@ class InviteNotifier extends StateNotifier<InviteState> {
         );
 
         await sessionNotifier.addSession(session);
-
-        // SessionManager has no inviter-side "process response" API yet, so
-        // we import the freshly derived session once at acceptance time.
-        final remoteDeviceId =
-            (result.deviceId != null && result.deviceId!.trim().isNotEmpty)
-            ? result.deviceId!.trim()
-            : result.inviteePubkeyHex;
-        await sessionManager.importSessionState(
-          peerPubkeyHex: recipientOwnerPubkey,
-          stateJson: sessionState,
-          deviceId: remoteDeviceId,
-        );
       }
+
+      // SessionManager has no inviter-side "process response" API yet, so
+      // import the freshly derived session state on each accepted response.
+      //
+      // This keeps sender subscriptions fresh when a peer rotates/refreshes sessions,
+      // including self-chat interop where a session row may already exist.
+      //
+      // Interop note: invite responses from some clients omit/repurpose `deviceId`.
+      // `inviteePubkeyHex` is the sender identity used for session event authors.
+      final remoteDeviceId = result.inviteePubkeyHex;
+      await sessionManager.importSessionState(
+        peerPubkeyHex: recipientOwnerPubkey,
+        stateJson: sessionState,
+        deviceId: remoteDeviceId,
+      );
 
       // Mark invite as used
       await _datasource.markUsed(inviteId, recipientOwnerPubkey);
