@@ -12,6 +12,8 @@ on:
 
 env:
   FLUTTER_VERSION: '3.41.2'
+  NDR_FFI_REPOSITORY: 'mmalmi/nostr-double-ratchet'
+  NDR_FFI_REF: '6caa5f900e35c22650008228cc125916034a0f2c'
 
 jobs:
   verify:
@@ -235,6 +237,28 @@ jobs:
       MACOS_NOTARIZE_TEAM_ID: ${{ secrets.MACOS_NOTARIZE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Checkout nostr-double-ratchet (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.NDR_FFI_REPOSITORY }}
+          ref: ${{ env.NDR_FFI_REF }}
+          path: nostr-double-ratchet
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build ndr-ffi static library (arm64)
+        run: |
+          cargo build \
+            --manifest-path nostr-double-ratchet/rust/Cargo.toml \
+            -p ndr-ffi \
+            --target aarch64-apple-darwin \
+            --release
+          cp nostr-double-ratchet/rust/target/aarch64-apple-darwin/release/libndr_ffi.a libndr_ffi.a
+          ls -lh libndr_ffi.a
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
