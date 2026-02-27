@@ -239,6 +239,12 @@ final messageSubscriptionProvider = Provider<SessionManagerService>((ref) {
     });
   }
 
+  schedule(() async {
+    await ref
+        .read(inviteStateProvider.notifier)
+        .ensurePublishedPublicInvite()
+        .catchError((error, stackTrace) {});
+  });
   requestInviteResponseSubscriptionRefresh();
   ref.listen<InviteState>(inviteStateProvider, (previous, next) {
     requestInviteResponseSubscriptionRefresh();

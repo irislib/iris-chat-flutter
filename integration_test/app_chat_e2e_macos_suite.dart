@@ -617,4 +617,62 @@ void main() {
       await relay.stop();
     }
   });
+
+  testWidgets(
+    'public npub chat link path can bootstrap first incoming message',
+    (tester) async {
+      await tester.pumpWidget(const SizedBox.shrink());
+
+      if (!Platform.isMacOS) {
+        return;
+      }
+
+      final relay = await TestRelay.start();
+      final relayUrl = 'ws://127.0.0.1:${relay.port}';
+
+      _AppInstance? alice;
+      _AppInstance? bob;
+
+      try {
+        alice = await _startInstance(name: 'alice-npub', relayUrl: relayUrl);
+        bob = await _startInstance(name: 'bob-npub', relayUrl: relayUrl);
+
+        final aliceC = alice.container;
+        final bobC = bob.container;
+
+        final bobPubkey = bobC.read(authStateProvider).pubkeyHex;
+        expect(bobPubkey, isNotNull);
+
+        final aliceSession = await aliceC
+            .read(sessionStateProvider.notifier)
+            .ensureSessionForRecipient(bobPubkey!);
+
+        await aliceC
+            .read(chatStateProvider.notifier)
+            .sendMessage(aliceSession.id, 'hello bob via npub path');
+
+        await _pumpUntil(
+          condition: () {
+            final allMessages = bobC.read(chatStateProvider).messages.values;
+            for (final messages in allMessages) {
+              if (messages.any((m) => m.text == 'hello bob via npub path')) {
+                return true;
+              }
+            }
+            return false;
+          },
+          timeout: const Duration(seconds: 20),
+          debugOnTimeout: () {
+            return '--- bob state ---\n${_describeChatState(bobC)}\n'
+                '--- alice state ---\n${_describeChatState(aliceC)}\n'
+                '--- relay ---\n${_describeRelayDrEvents(relay)}';
+          },
+        );
+      } finally {
+        await alice?.dispose();
+        await bob?.dispose();
+        await relay.stop();
+      }
+    },
+  );
 }

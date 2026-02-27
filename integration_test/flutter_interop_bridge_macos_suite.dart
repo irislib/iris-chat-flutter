@@ -576,6 +576,10 @@ void main() {
       );
       await container.read(nostrServiceProvider).connect();
 
+      await container
+          .read(inviteStateProvider.notifier)
+          .ensurePublishedPublicInvite();
+
       // Start invite/message bridge wiring.
       container.read(messageSubscriptionProvider);
 

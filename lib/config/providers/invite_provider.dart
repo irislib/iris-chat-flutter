@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:nostr/nostr.dart' as nostr;
 import 'package:uuid/uuid.dart';
 
 import '../../core/ffi/ndr_ffi.dart';
@@ -37,6 +38,8 @@ class InviteNotifier extends StateNotifier<InviteState> {
   final InviteLocalDatasource _datasource;
   final Ref _ref;
   static const Duration _kLoadTimeout = Duration(seconds: 3);
+  static const String _kPublicBootstrapInviteLabel =
+      '[system] public chat bootstrap';
 
   /// Load all invites from storage.
   Future<void> loadInvites() async {
@@ -56,7 +59,11 @@ class InviteNotifier extends StateNotifier<InviteState> {
   }
 
   /// Create a new invite.
-  Future<Invite?> createInvite({String? label, int? maxUses}) async {
+  Future<Invite?> createInvite({
+    String? label,
+    int? maxUses,
+    bool publishToRelays = false,
+  }) async {
     state = state.copyWith(isCreating: true, error: null);
     InviteHandle? inviteHandle;
     try {
@@ -109,11 +116,119 @@ class InviteNotifier extends StateNotifier<InviteState> {
         isCreating: false,
       );
 
+      if (publishToRelays) {
+        await _publishInviteToRelays(
+          serializedState: serializedState,
+          signerPrivkeyHex: devicePrivkeyHex,
+        );
+      }
+
       return invite;
     } catch (e, st) {
       final appError = AppError.from(e, st);
       state = state.copyWith(isCreating: false, error: appError.message);
       return null;
+    } finally {
+      try {
+        await inviteHandle?.dispose();
+      } catch (_) {}
+    }
+  }
+
+  /// Ensure we have a published public invite for npub/chat-link bootstrap.
+  ///
+  /// This invite is managed by the app (not user-facing) and is used so peers
+  /// can establish a first session when they only know our npub.
+  Future<void> ensurePublishedPublicInvite() async {
+    final authState = _ref.read(authStateProvider);
+    if (!authState.isAuthenticated || authState.pubkeyHex == null) return;
+
+    final authRepo = _ref.read(authRepositoryProvider);
+    final devicePrivkeyHex = await authRepo.getPrivateKey();
+    if (devicePrivkeyHex == null || devicePrivkeyHex.isEmpty) return;
+
+    if (!authState.isLinkedDevice) {
+      final ownerPubkeyHex = authState.pubkeyHex!;
+      final devicePubkeyHex = await NdrFfi.derivePublicKey(devicePrivkeyHex);
+      await _publishMergedAppKeys(
+        ownerPubkeyHex: ownerPubkeyHex,
+        ownerPrivkeyHex: devicePrivkeyHex,
+        devicePubkeysToEnsure: {devicePubkeyHex},
+      );
+    }
+
+    Invite? existingPublicInvite;
+    final existingInvites = await _datasource.getActiveInvites();
+    for (final invite in existingInvites) {
+      if (invite.label != _kPublicBootstrapInviteLabel) continue;
+      if (invite.serializedState == null || invite.serializedState!.isEmpty) {
+        continue;
+      }
+      existingPublicInvite = invite;
+      break;
+    }
+
+    if (existingPublicInvite != null) {
+      await _publishInviteToRelays(
+        serializedState: existingPublicInvite.serializedState!,
+        signerPrivkeyHex: devicePrivkeyHex,
+      );
+      return;
+    }
+
+    await createInvite(
+      label: _kPublicBootstrapInviteLabel,
+      maxUses: 1000,
+      publishToRelays: true,
+    );
+  }
+
+  Future<void> _publishInviteToRelays({
+    required String serializedState,
+    required String signerPrivkeyHex,
+  }) async {
+    InviteHandle? inviteHandle;
+    try {
+      inviteHandle = await NdrFfi.inviteDeserialize(serializedState);
+      final unsignedEventJson = await inviteHandle.toEventJson();
+      final decoded = jsonDecode(unsignedEventJson);
+      if (decoded is! Map<String, dynamic>) return;
+
+      final kind = (decoded['kind'] as num?)?.toInt();
+      if (kind == null) return;
+
+      final content = decoded['content'] as String? ?? '';
+      final rawTags = decoded['tags'];
+      final tags = <List<String>>[];
+      if (rawTags is List) {
+        for (final entry in rawTags) {
+          if (entry is! List) continue;
+          tags.add(entry.map((e) => e.toString()).toList());
+        }
+      }
+
+      final signed = nostr.Event.from(
+        kind: kind,
+        tags: tags,
+        content: content,
+        privkey: signerPrivkeyHex,
+        verify: false,
+      );
+
+      await _ref
+          .read(nostrServiceProvider)
+          .publishEvent(jsonEncode(signed.toJson()));
+    } catch (e, st) {
+      Logger.warning(
+        'Failed to publish invite event',
+        category: LogCategory.invite,
+        data: {'error': e.toString()},
+      );
+      Logger.debug(
+        'Publish invite stack',
+        category: LogCategory.invite,
+        data: {'stack': st.toString()},
+      );
     } finally {
       try {
         await inviteHandle?.dispose();
@@ -361,10 +476,14 @@ class InviteNotifier extends StateNotifier<InviteState> {
 
         // SessionManager has no inviter-side "process response" API yet, so
         // we import the freshly derived session once at acceptance time.
+        final remoteDeviceId =
+            (result.deviceId != null && result.deviceId!.trim().isNotEmpty)
+            ? result.deviceId!.trim()
+            : result.inviteePubkeyHex;
         await sessionManager.importSessionState(
           peerPubkeyHex: recipientOwnerPubkey,
           stateJson: sessionState,
-          deviceId: result.inviteePubkeyHex,
+          deviceId: remoteDeviceId,
         );
       }
 
