@@ -6,9 +6,16 @@ import '../../../../config/providers/chat_provider.dart';
 import 'unseen_badge.dart';
 
 class ChatsBackButton extends ConsumerWidget {
-  const ChatsBackButton({super.key, this.onPressed});
+  const ChatsBackButton({
+    super.key,
+    this.onPressed,
+    this.excludeSessionId,
+    this.excludeGroupId,
+  });
 
   final VoidCallback? onPressed;
+  final String? excludeSessionId;
+  final String? excludeGroupId;
 
   void _handlePressed(BuildContext context) {
     final callback = onPressed;
@@ -36,6 +43,10 @@ class ChatsBackButton extends ConsumerWidget {
             sessionStateProvider.select((state) {
               var total = 0;
               for (final session in state.sessions) {
+                if (excludeSessionId != null &&
+                    session.id == excludeSessionId) {
+                  continue;
+                }
                 if (session.unreadCount > 0) {
                   total += session.unreadCount;
                 }
@@ -49,6 +60,9 @@ class ChatsBackButton extends ConsumerWidget {
             groupStateProvider.select((state) {
               var total = 0;
               for (final group in state.groups) {
+                if (excludeGroupId != null && group.id == excludeGroupId) {
+                  continue;
+                }
                 if (group.unreadCount > 0) {
                   total += group.unreadCount;
                 }

@@ -483,7 +483,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     return Scaffold(
       appBar: AppBar(
-        leading: const ChatsBackButton(),
+        leading: ChatsBackButton(excludeSessionId: widget.sessionId),
         title: InkWell(
           key: const Key('chat-header-info-button'),
           borderRadius: BorderRadius.circular(8),

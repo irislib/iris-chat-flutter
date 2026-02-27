@@ -377,7 +377,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     if (group == null) {
       return Scaffold(
         appBar: AppBar(
-          leading: const ChatsBackButton(),
+          leading: ChatsBackButton(excludeGroupId: widget.groupId),
           title: const Text('Group'),
         ),
         body: const Center(child: CircularProgressIndicator()),
@@ -387,7 +387,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
     return Scaffold(
       appBar: AppBar(
-        leading: const ChatsBackButton(),
+        leading: ChatsBackButton(excludeGroupId: widget.groupId),
         title: InkWell(
           key: const Key('group-header-info-button'),
           borderRadius: BorderRadius.circular(8),

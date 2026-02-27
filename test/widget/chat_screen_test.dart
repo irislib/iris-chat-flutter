@@ -208,11 +208,40 @@ void main() {
         expect(find.byIcon(Icons.timer_outlined), findsNothing);
       });
 
-      testWidgets('shows unseen badge on back button when unread exists', (
+      testWidgets(
+        'does not show unseen badge when only active chat has unread',
+        (tester) async {
+          await tester.pumpWidget(
+            buildChatScreen(session: testSession.copyWith(unreadCount: 3)),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.byKey(const Key('chats-back-unseen-badge')),
+            findsNothing,
+          );
+          expect(find.text('3'), findsNothing);
+        },
+      );
+
+      testWidgets('shows unseen badge for unread in other chats', (
         tester,
       ) async {
+        final otherSession = ChatSession(
+          id: 'other-session-1',
+          recipientPubkeyHex:
+              'f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0',
+          recipientName: 'Bob',
+          createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
+          isInitiator: false,
+          unreadCount: 5,
+        );
+
         await tester.pumpWidget(
-          buildChatScreen(session: testSession.copyWith(unreadCount: 3)),
+          buildChatScreen(
+            session: testSession.copyWith(unreadCount: 3),
+            sessions: [testSession.copyWith(unreadCount: 3), otherSession],
+          ),
         );
         await tester.pumpAndSettle();
 
@@ -220,7 +249,7 @@ void main() {
           find.byKey(const Key('chats-back-unseen-badge')),
           findsOneWidget,
         );
-        expect(find.text('3'), findsOneWidget);
+        expect(find.text('5'), findsOneWidget);
       });
     });
 
