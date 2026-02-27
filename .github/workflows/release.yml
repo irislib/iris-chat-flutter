@@ -351,6 +351,7 @@ jobs:
 
       - name: Notarize macOS app (optional)
         if: ${{ env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' && env.MACOS_NOTARIZE_APPLE_ID != '' && env.MACOS_NOTARIZE_APP_PASSWORD != '' && env.MACOS_NOTARIZE_TEAM_ID != '' }}
+        continue-on-error: true
         run: |
           APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "${APP_PATH}" ]; then
