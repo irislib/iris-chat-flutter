@@ -21,7 +21,11 @@ class TestInviteNotifier extends InviteNotifier {
     : super(datasource, ref);
 
   @override
-  Future<Invite?> createInvite({String? label, int? maxUses}) async {
+  Future<Invite?> createInvite({
+    String? label,
+    int? maxUses,
+    bool publishToRelays = false,
+  }) async {
     // Avoid calling NdrFfi in widget tests; CreateInviteScreen should still
     // behave as if an invite was created successfully.
     final invite = Invite(

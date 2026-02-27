@@ -47,7 +47,11 @@ class _TestInviteNotifier extends InviteNotifier {
   }
 
   @override
-  Future<Invite?> createInvite({String? label, int? maxUses}) async {
+  Future<Invite?> createInvite({
+    String? label,
+    int? maxUses,
+    bool publishToRelays = false,
+  }) async {
     createCalls++;
     lastLabel = label;
     final invite = Invite(
