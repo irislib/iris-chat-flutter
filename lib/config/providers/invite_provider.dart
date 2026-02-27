@@ -38,8 +38,6 @@ class InviteNotifier extends StateNotifier<InviteState> {
   final InviteLocalDatasource _datasource;
   final Ref _ref;
   static const Duration _kLoadTimeout = Duration(seconds: 3);
-  static const String _kPublicBootstrapInviteLabel =
-      '[system] public chat bootstrap';
 
   /// Load all invites from storage.
   Future<void> loadInvites() async {
@@ -135,10 +133,7 @@ class InviteNotifier extends StateNotifier<InviteState> {
     }
   }
 
-  /// Ensure we have a published public invite for npub/chat-link bootstrap.
-  ///
-  /// This invite is managed by the app (not user-facing) and is used so peers
-  /// can establish a first session when they only know our npub.
+  /// Ensure a regular chat invite exists and is published for npub bootstrap.
   Future<void> ensurePublishedPublicInvite() async {
     final authState = _ref.read(authStateProvider);
     if (!authState.isAuthenticated || authState.pubkeyHex == null) return;
@@ -157,30 +152,25 @@ class InviteNotifier extends StateNotifier<InviteState> {
       );
     }
 
-    Invite? existingPublicInvite;
+    Invite? inviteToPublish;
     final existingInvites = await _datasource.getActiveInvites();
     for (final invite in existingInvites) {
-      if (invite.label != _kPublicBootstrapInviteLabel) continue;
       if (invite.serializedState == null || invite.serializedState!.isEmpty) {
         continue;
       }
-      existingPublicInvite = invite;
+      inviteToPublish = invite;
       break;
     }
 
-    if (existingPublicInvite != null) {
+    inviteToPublish ??= await createInvite();
+
+    final serializedState = inviteToPublish?.serializedState;
+    if (serializedState != null && serializedState.isNotEmpty) {
       await _publishInviteToRelays(
-        serializedState: existingPublicInvite.serializedState!,
+        serializedState: serializedState,
         signerPrivkeyHex: devicePrivkeyHex,
       );
-      return;
     }
-
-    await createInvite(
-      label: _kPublicBootstrapInviteLabel,
-      maxUses: 1000,
-      publishToRelays: true,
-    );
   }
 
   Future<void> _publishInviteToRelays({

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
@@ -18,11 +21,68 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _keyController = TextEditingController();
   bool _showKeyInput = false;
+  Timer? _autoLoginDebounce;
+  String? _lastAutoSubmittedNsec;
 
   @override
   void dispose() {
+    _autoLoginDebounce?.cancel();
     _keyController.dispose();
     super.dispose();
+  }
+
+  String? _extractValidNsecCandidate(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return null;
+
+    var candidate = trimmed;
+    if (candidate.toLowerCase().startsWith('nostr:')) {
+      candidate = candidate.substring('nostr:'.length).trim();
+    }
+
+    final nsecMatch = RegExp(
+      'nsec1[0-9a-z]+',
+      caseSensitive: false,
+    ).firstMatch(candidate);
+    final nsecCandidate = nsecMatch?.group(0);
+    if (nsecCandidate == null || nsecCandidate.isEmpty) return null;
+
+    try {
+      final decoded = nostr.Nip19.decodePrivkey(nsecCandidate);
+      if (decoded.trim().length == 64) {
+        return nsecCandidate;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _maybeAutoSubmitLogin(String rawInput) {
+    if (!_showKeyInput) return;
+
+    final nsecCandidate = _extractValidNsecCandidate(rawInput);
+    if (nsecCandidate == null) {
+      _lastAutoSubmittedNsec = null;
+      _autoLoginDebounce?.cancel();
+      return;
+    }
+
+    if (_lastAutoSubmittedNsec == nsecCandidate) return;
+
+    _autoLoginDebounce?.cancel();
+    _autoLoginDebounce = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted || !_showKeyInput) return;
+
+      final authState = ref.read(authStateProvider);
+      if (authState.isLoading) return;
+
+      final latestCandidate = _extractValidNsecCandidate(_keyController.text);
+      if (latestCandidate == null || latestCandidate != nsecCandidate) return;
+
+      _lastAutoSubmittedNsec = nsecCandidate;
+      unawaited(_login());
+    });
   }
 
   Future<void> _createIdentity() async {
@@ -259,6 +319,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         setState(() {
                           _showKeyInput = false;
                           _keyController.clear();
+                          _lastAutoSubmittedNsec = null;
                         });
                         ref.read(authStateProvider.notifier).clearError();
                       },
@@ -267,6 +328,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   obscureText: true,
                   autocorrect: false,
                   enableSuggestions: false,
+                  onChanged: _maybeAutoSubmitLogin,
                 ),
                 const SizedBox(height: 16),
                 FilledButton(

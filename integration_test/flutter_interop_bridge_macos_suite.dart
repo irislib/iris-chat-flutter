@@ -272,6 +272,13 @@ Future<void> _handleCommand({
         await ok({'inviteId': invite.id, 'inviteUrl': inviteUrl});
         return;
 
+      case 'ensure_default_invite_published':
+        await container
+            .read(inviteStateProvider.notifier)
+            .ensurePublishedPublicInvite();
+        await ok({});
+        return;
+
       case 'accept_invite':
         final inviteUrl = payload['inviteUrl']?.toString() ?? '';
         if (inviteUrl.isEmpty) {
@@ -575,7 +582,6 @@ void main() {
         reason: authState.error ?? 'Bridge auth failed',
       );
       await container.read(nostrServiceProvider).connect();
-
       await container
           .read(inviteStateProvider.notifier)
           .ensurePublishedPublicInvite();

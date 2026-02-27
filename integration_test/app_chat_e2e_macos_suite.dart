@@ -159,6 +159,10 @@ Future<_AppInstance> _startInstance({
   // Bring transport online.
   await container.read(nostrServiceProvider).connect();
 
+  await container
+      .read(inviteStateProvider.notifier)
+      .ensurePublishedPublicInvite();
+
   // Start message + invite subscription bridge.
   container.read(messageSubscriptionProvider);
 

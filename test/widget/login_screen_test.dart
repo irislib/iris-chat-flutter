@@ -10,6 +10,7 @@ import 'package:iris_chat/features/auth/domain/models/identity.dart';
 import 'package:iris_chat/features/auth/domain/repositories/auth_repository.dart';
 import 'package:iris_chat/features/auth/presentation/screens/login_screen.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 import '../test_helpers.dart';
 
@@ -397,6 +398,32 @@ void main() {
           ),
         );
       });
+
+      testWidgets(
+        'pasting valid nsec auto-starts login without tapping button',
+        (tester) async {
+          when(
+            () => mockAuthRepo.login(any()),
+          ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+
+          final nsec = nostr.Nip19.encodePrivkey(testPrivkeyHex) as String;
+
+          await tester.pumpWidget(buildLoginScreenRouter());
+          await tester.pumpAndSettle();
+
+          await tester.tap(find.text('Import Existing Key'));
+          await tester.pumpAndSettle();
+
+          await tester.enterText(find.byType(TextField), nsec);
+          await tester.pumpAndSettle();
+
+          expect(find.text('Register This Device?'), findsOneWidget);
+          await tester.tap(find.text('Sign In Without Registering'));
+          await tester.pumpAndSettle();
+
+          verify(() => mockAuthRepo.login(nsec)).called(1);
+        },
+      );
 
       testWidgets('can sign in and register this device', (tester) async {
         when(

@@ -62,15 +62,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     initSeenSyncObserver();
     _scrollController.addListener(_onScroll);
 
-    // Load messages and clear unread
+    // Load initial message history after first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(() async {
-        await ref
-            .read(chatStateProvider.notifier)
-            .loadMessages(widget.sessionId);
-        scheduleSeenSync();
-      }());
+      unawaited(_reloadConversationState());
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionId == widget.sessionId) return;
+    unawaited(_reloadConversationState());
+  }
+
+  Future<void> _reloadConversationState() async {
+    await ref.read(chatStateProvider.notifier).loadMessages(widget.sessionId);
+    scheduleSeenSync();
   }
 
   @override
