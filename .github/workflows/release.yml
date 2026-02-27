@@ -262,7 +262,21 @@ jobs:
             -derivedDataPath build/macos \
             -destination 'platform=macOS,arch=arm64' \
             ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=YES
+            ONLY_ACTIVE_ARCH=NO
+
+      - name: Remove LaunchAtLogin package bundle from release app (if present)
+        run: |
+          APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "No macOS .app bundle found in build output"
+            exit 1
+          fi
+
+          LAUNCH_BUNDLE_PATH="${APP_PATH}/Contents/Resources/LaunchAtLogin_LaunchAtLogin.bundle"
+          if [ -d "${LAUNCH_BUNDLE_PATH}" ]; then
+            echo "Removing LaunchAtLogin package bundle from release artifact"
+            rm -rf "${LAUNCH_BUNDLE_PATH}"
+          fi
 
       - name: Verify macOS native FFI is enabled
         run: |
@@ -351,7 +365,6 @@ jobs:
 
       - name: Notarize macOS app (optional)
         if: ${{ env.MACOS_CERTIFICATE_P12 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' && env.MACOS_SIGNING_IDENTITY != '' && env.MACOS_NOTARIZE_APPLE_ID != '' && env.MACOS_NOTARIZE_APP_PASSWORD != '' && env.MACOS_NOTARIZE_TEAM_ID != '' }}
-        continue-on-error: true
         run: |
           APP_PATH="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)"
           if [ -z "${APP_PATH}" ]; then
@@ -362,13 +375,32 @@ jobs:
           NOTARIZE_ZIP="$RUNNER_TEMP/iris-chat-notarize.zip"
           ditto -c -k --sequesterRsrc --keepParent "${APP_PATH}" "${NOTARIZE_ZIP}"
 
-          xcrun notarytool submit "${NOTARIZE_ZIP}" \
+          SUBMIT_OUTPUT="$(xcrun notarytool submit "${NOTARIZE_ZIP}" \
             --apple-id "${MACOS_NOTARIZE_APPLE_ID}" \
             --password "${MACOS_NOTARIZE_APP_PASSWORD}" \
             --team-id "${MACOS_NOTARIZE_TEAM_ID}" \
-            --wait
+            --wait \
+            --output-format json)"
+
+          echo "${SUBMIT_OUTPUT}"
+
+          SUBMISSION_ID="$(printf '%s' "${SUBMIT_OUTPUT}" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')"
+          SUBMISSION_STATUS="$(printf '%s' "${SUBMIT_OUTPUT}" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))')"
+
+          if [ "${SUBMISSION_STATUS}" != "Accepted" ]; then
+            echo "Notarization status was '${SUBMISSION_STATUS}' (expected 'Accepted')."
+            if [ -n "${SUBMISSION_ID}" ]; then
+              echo "Fetching notary log for submission ${SUBMISSION_ID}."
+              xcrun notarytool log "${SUBMISSION_ID}" \
+                --apple-id "${MACOS_NOTARIZE_APPLE_ID}" \
+                --password "${MACOS_NOTARIZE_APP_PASSWORD}" \
+                --team-id "${MACOS_NOTARIZE_TEAM_ID}" || true
+            fi
+            exit 1
+          fi
 
           xcrun stapler staple "${APP_PATH}"
+          xcrun stapler validate "${APP_PATH}"
 
       - name: Package macOS artifacts
         run: |
