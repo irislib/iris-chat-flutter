@@ -41,7 +41,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   final Map<String, Timer> _typingExpiryTimers = {};
   final Map<String, int> _lastTypingSentAtMs = {};
-  final Map<String, int> _lastRemoteTypingAtMs = {};
+  final Map<String, int> _lastRemoteMessageAtMs = {};
   bool _typingIndicatorsEnabled = true;
   bool _deliveryReceiptsEnabled = true;
   bool _readReceiptsEnabled = true;
@@ -65,7 +65,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       t.cancel();
     }
     _typingExpiryTimers.clear();
-    _lastRemoteTypingAtMs.clear();
+    _lastRemoteMessageAtMs.clear();
     super.dispose();
   }
 
@@ -474,11 +474,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
             normalizedContent == 'typing:false';
 
         if (isStopEvent) {
-          _clearRemoteTyping(
-            sessionId,
-            recipientPubkeyHex: peerPubkeyHex,
-            force: true,
-          );
+          _clearRemoteTyping(sessionId, recipientPubkeyHex: peerPubkeyHex);
         } else {
           _setRemoteTyping(
             sessionId,
@@ -747,27 +743,36 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
     final resolvedTypingTimestampMs =
         typingTimestampMs ?? DateTime.now().millisecondsSinceEpoch;
+    final applicableKeys = <String>{};
     for (final key in keys) {
+      final lastMessageTimestampMs = _lastRemoteMessageAtMs[key];
+      if (lastMessageTimestampMs != null &&
+          resolvedTypingTimestampMs <= lastMessageTimestampMs) {
+        continue;
+      }
+      applicableKeys.add(key);
+    }
+    if (applicableKeys.isEmpty) return;
+
+    for (final key in applicableKeys) {
       _typingExpiryTimers[key]?.cancel();
     }
 
     final nextStates = {...state.typingStates};
-    for (final key in keys) {
+    for (final key in applicableKeys) {
       nextStates[key] = true;
-      _lastRemoteTypingAtMs[key] = resolvedTypingTimestampMs;
     }
     state = state.copyWith(typingStates: nextStates);
 
     final timer = Timer(_kTypingExpiry, () {
       final next = {...state.typingStates};
-      for (final key in keys) {
+      for (final key in applicableKeys) {
         _typingExpiryTimers.remove(key);
-        _lastRemoteTypingAtMs.remove(key);
         next.remove(key);
       }
       state = state.copyWith(typingStates: next);
     });
-    for (final key in keys) {
+    for (final key in applicableKeys) {
       _typingExpiryTimers[key] = timer;
     }
   }
@@ -776,28 +781,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String sessionId, {
     String? recipientPubkeyHex,
     int? messageTimestampMs,
-    bool force = false,
   }) {
     final keys = _typingKeysForSession(
       sessionId,
       recipientPubkeyHex: recipientPubkeyHex,
     );
 
+    if (messageTimestampMs != null) {
+      for (final key in keys) {
+        final existing = _lastRemoteMessageAtMs[key] ?? 0;
+        _lastRemoteMessageAtMs[key] = messageTimestampMs > existing
+            ? messageTimestampMs
+            : existing;
+      }
+    }
+
     final next = {...state.typingStates};
     var changed = false;
     for (final key in keys) {
-      final lastTypingTimestampMs = _lastRemoteTypingAtMs[key];
-      if (!force &&
-          messageTimestampMs != null &&
-          lastTypingTimestampMs != null &&
-          messageTimestampMs < lastTypingTimestampMs) {
-        // Relay replays can deliver older messages after a newer typing rumor.
-        // Keep typing visible until a newer/equal message (or explicit stop) arrives.
-        continue;
-      }
       _typingExpiryTimers[key]?.cancel();
       _typingExpiryTimers.remove(key);
-      _lastRemoteTypingAtMs.remove(key);
       changed = next.remove(key) != null || changed;
     }
     if (!changed) return;

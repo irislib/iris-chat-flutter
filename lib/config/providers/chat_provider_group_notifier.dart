@@ -59,6 +59,7 @@ class GroupNotifier extends StateNotifier<GroupState> {
 
   final Map<String, Timer> _typingExpiryTimers = {};
   final Map<String, int> _lastTypingSentAtMs = {};
+  final Map<String, int> _lastGroupMessageAtMs = {};
   bool _typingIndicatorsEnabled = true;
   bool _desktopNotificationsEnabled = true;
 
@@ -76,6 +77,7 @@ class GroupNotifier extends StateNotifier<GroupState> {
       t.cancel();
     }
     _typingExpiryTimers.clear();
+    _lastGroupMessageAtMs.clear();
     super.dispose();
   }
 
@@ -948,6 +950,13 @@ class GroupNotifier extends StateNotifier<GroupState> {
       senderPubkeyHex: rumor.pubkey,
     );
 
+    if (!isMine) {
+      _clearGroupTyping(
+        groupId,
+        messageTimestampMs: rumorTimestamp(rumor).millisecondsSinceEpoch,
+      );
+    }
+
     await _groupMessageDatasource.saveMessage(message);
 
     // Update in-memory list.
@@ -1017,6 +1026,13 @@ class GroupNotifier extends StateNotifier<GroupState> {
       return;
     }
 
+    final typingTimestampMs = rumorTimestamp(rumor).millisecondsSinceEpoch;
+    final lastMessageTimestampMs = _lastGroupMessageAtMs[groupId];
+    if (lastMessageTimestampMs != null &&
+        typingTimestampMs <= lastMessageTimestampMs) {
+      return;
+    }
+
     _typingExpiryTimers[groupId]?.cancel();
     state = state.copyWith(
       typingStates: {...state.typingStates, groupId: true},
@@ -1026,7 +1042,13 @@ class GroupNotifier extends StateNotifier<GroupState> {
     });
   }
 
-  void _clearGroupTyping(String groupId) {
+  void _clearGroupTyping(String groupId, {int? messageTimestampMs}) {
+    if (messageTimestampMs != null) {
+      final existing = _lastGroupMessageAtMs[groupId] ?? 0;
+      _lastGroupMessageAtMs[groupId] = messageTimestampMs > existing
+          ? messageTimestampMs
+          : existing;
+    }
     _typingExpiryTimers[groupId]?.cancel();
     _typingExpiryTimers.remove(groupId);
     if (!state.typingStates.containsKey(groupId)) return;

@@ -981,7 +981,7 @@ void main() {
       );
 
       test(
-        'applies typing when event second matches last message second with ms precision',
+        'ignores typing when event second matches the last incoming message second',
         () async {
           const peerPubkey =
               '2222222222222222222222222222222222222222222222222222222222222222';
@@ -1020,17 +1020,17 @@ void main() {
           await notifier.receiveDecryptedMessage(peerPubkey, typingRumorJson);
 
           expect(
-            notifier.state.typingStates[session.id],
-            isTrue,
+            notifier.state.typingStates[session.id] ?? false,
+            isFalse,
             reason:
-                'Typing should not be dropped when the last message timestamp has '
-                'millisecond precision but typing only has second precision.',
+                'Match iris-chat behavior: once an incoming message is seen for a '
+                'second, typing from that same second should not re-appear.',
           );
         },
       );
 
       test(
-        'applies typing even when typing timestamp is older than latest message second',
+        'ignores typing when typing timestamp is older than latest incoming message',
         () async {
           const peerPubkey =
               '2222222222222222222222222222222222222222222222222222222222222222';
@@ -1071,10 +1071,10 @@ void main() {
 
           expect(
             notifier.state.typingStates[session.id] ?? false,
-            isTrue,
+            isFalse,
             reason:
-                'Typing events can arrive with older remote timestamps when clocks skew; '
-                'they should still be shown.',
+                'Match iris-chat behavior: stale typing events should be ignored '
+                'after a newer incoming message is processed.',
           );
         },
       );
@@ -1138,56 +1138,53 @@ void main() {
         },
       );
 
-      test(
-        'does not clear typing when an older incoming message replay arrives',
-        () async {
-          const peerPubkey =
-              '2222222222222222222222222222222222222222222222222222222222222222';
-          final session = ChatSession(
-            id: 'session-1',
-            recipientPubkeyHex: peerPubkey,
-            createdAt: DateTime.now(),
-          );
+      test('clears typing when an incoming message replay arrives', () async {
+        const peerPubkey =
+            '2222222222222222222222222222222222222222222222222222222222222222';
+        final session = ChatSession(
+          id: 'session-1',
+          recipientPubkeyHex: peerPubkey,
+          createdAt: DateTime.now(),
+        );
 
-          when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
-          when(
-            () => mockMessageDatasource.messageExists(any()),
-          ).thenAnswer((_) async => false);
-          when(
-            () => mockMessageDatasource.saveMessage(any()),
-          ).thenAnswer((_) async {});
-          when(
-            () => mockSessionManagerService.sendReceipt(
-              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
-              receiptType: any(named: 'receiptType'),
-              messageIds: any(named: 'messageIds'),
-            ),
-          ).thenAnswer((_) async {});
-          when(
-            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
-          ).thenAnswer((_) async => session);
+        when(() => mockSessionManagerService.ownerPubkeyHex).thenReturn(null);
+        when(
+          () => mockMessageDatasource.messageExists(any()),
+        ).thenAnswer((_) async => false);
+        when(
+          () => mockMessageDatasource.saveMessage(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockSessionManagerService.sendReceipt(
+            recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+            receiptType: any(named: 'receiptType'),
+            messageIds: any(named: 'messageIds'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+        ).thenAnswer((_) async => session);
 
-          const typingRumorJson =
-              '{"id":"typing-new","pubkey":"$peerPubkey","created_at":1700000005,"kind":25,"content":"typing","tags":[["ms","1700000005000"]]}';
-          const olderMessageRumorJson =
-              '{"id":"msg-old","pubkey":"$peerPubkey","created_at":1700000004,"kind":14,"content":"older replay","tags":[["ms","1700000004000"]]}';
+        const typingRumorJson =
+            '{"id":"typing-new","pubkey":"$peerPubkey","created_at":1700000005,"kind":25,"content":"typing","tags":[["ms","1700000005000"]]}';
+        const olderMessageRumorJson =
+            '{"id":"msg-old","pubkey":"$peerPubkey","created_at":1700000004,"kind":14,"content":"older replay","tags":[["ms","1700000004000"]]}';
 
-          await notifier.receiveDecryptedMessage(peerPubkey, typingRumorJson);
-          expect(notifier.state.typingStates[session.id] ?? false, isTrue);
+        await notifier.receiveDecryptedMessage(peerPubkey, typingRumorJson);
+        expect(notifier.state.typingStates[session.id] ?? false, isTrue);
 
-          await notifier.receiveDecryptedMessage(
-            peerPubkey,
-            olderMessageRumorJson,
-          );
+        await notifier.receiveDecryptedMessage(
+          peerPubkey,
+          olderMessageRumorJson,
+        );
 
-          expect(
-            notifier.state.typingStates[session.id] ?? false,
-            isTrue,
-            reason:
-                'Older replayed messages should not clear a newer typing indicator.',
-          );
-        },
-      );
+        expect(
+          notifier.state.typingStates[session.id] ?? false,
+          isFalse,
+          reason:
+              'Match iris-chat behavior: incoming messages clear typing state.',
+        );
+      });
 
       test(
         'does not auto-send delivered receipt when delivery receipts are disabled',
