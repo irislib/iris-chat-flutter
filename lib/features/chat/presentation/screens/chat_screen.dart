@@ -55,6 +55,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   int _nextNoticeSequence = 0;
   DateTime? _pinBottomUntil;
   ChatMessage? _replyingTo;
+  int _lastTimelineEntryCount = 0;
+  DateTime? _lastTimelineEntryTimestamp;
 
   @override
   void initState() {
@@ -438,6 +440,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     return entries;
   }
 
+  void _maybeAutoScrollForNewTimelineEntries(List<_TimelineEntry> entries) {
+    if (entries.isEmpty) {
+      _lastTimelineEntryCount = 0;
+      _lastTimelineEntryTimestamp = null;
+      return;
+    }
+
+    final latest = entries.last.timestamp;
+    final hasNewEntry =
+        entries.length != _lastTimelineEntryCount ||
+        _lastTimelineEntryTimestamp == null ||
+        latest.isAfter(_lastTimelineEntryTimestamp!);
+
+    _lastTimelineEntryCount = entries.length;
+    _lastTimelineEntryTimestamp = latest;
+
+    if (!hasNewEntry) return;
+    if (!_shouldKeepBottomPinned) return;
+    _scheduleScrollToBottom(retries: 4);
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.watch(profileUpdatesProvider);
@@ -467,6 +490,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final sessionDisplayName = profile?.bestName ?? session.displayName;
     final sessionPicture = profile?.picture;
     final timelineEntries = _buildTimelineEntries(messages);
+    _maybeAutoScrollForNewTimelineEntries(timelineEntries);
     final messageById = <String, ChatMessage>{};
     for (final message in messages) {
       messageById[message.id] = message;

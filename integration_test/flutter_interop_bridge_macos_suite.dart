@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +15,7 @@ import 'package:iris_chat/core/services/database_service.dart';
 import 'package:iris_chat/core/services/nostr_service.dart';
 import 'package:iris_chat/core/services/secure_storage_service.dart';
 import 'package:iris_chat/core/services/session_manager_service.dart';
+import 'package:iris_chat/features/chat/presentation/screens/chat_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
 class _MockFlutterSecureStorage extends Mock implements FlutterSecureStorage {}
@@ -331,7 +332,97 @@ Future<bool> _waitForGroupMessageText(
   return false;
 }
 
+Future<void> _pumpChatUi(
+  WidgetTester tester,
+  ProviderContainer container,
+  String sessionId,
+) async {
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: ChatScreen(sessionId: sessionId)),
+    ),
+  );
+  await tester.pump();
+}
+
+Future<bool> _waitForMessageInUi(
+  WidgetTester tester,
+  ProviderContainer container, {
+  required String sessionId,
+  required String text,
+  required Duration timeout,
+  required bool incomingOnly,
+}) async {
+  final end = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(end)) {
+    await _pumpChatUi(tester, container, sessionId);
+    final match = _findMessageByText(
+      container,
+      text: text,
+      incomingOnly: incomingOnly,
+    );
+    if (match != null &&
+        match.sessionId.toLowerCase() == sessionId.toLowerCase() &&
+        find.text(text).evaluate().isNotEmpty) {
+      return true;
+    }
+    await tester.pump(const Duration(milliseconds: 80));
+  }
+  return false;
+}
+
+Future<void> _sendMessageInUi(
+  WidgetTester tester,
+  ProviderContainer container, {
+  required String sessionId,
+  required String text,
+}) async {
+  await _pumpChatUi(tester, container, sessionId);
+
+  final input = find.byType(TextField).first;
+  if (input.evaluate().isEmpty) {
+    throw StateError('Chat composer TextField not found');
+  }
+  await tester.tap(input);
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.showKeyboard(input);
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.enterText(input, text);
+  await tester.pump(const Duration(milliseconds: 50));
+  final textField = tester.widget<TextField>(input);
+  final composed = textField.controller?.text ?? '';
+  if (composed.trim() != text.trim()) {
+    throw StateError(
+      'Failed to type message in composer. expected="$text" actual="$composed"',
+    );
+  }
+
+  final sendButton = find.byIcon(Icons.send).first;
+  if (sendButton.evaluate().isEmpty) {
+    throw StateError('Send button not found in chat UI');
+  }
+  await tester.tap(sendButton);
+  await tester.pump(const Duration(milliseconds: 120));
+
+  final sent = await _waitForMessageText(
+    container,
+    text: text,
+    timeout: const Duration(seconds: 8),
+    incomingOnly: false,
+  );
+  if (!sent) {
+    final messages = container.read(chatStateProvider).messages[sessionId] ?? [];
+    final previews = messages.map((m) => m.text).toList(growable: false);
+    throw StateError(
+      'UI send did not produce local message text within timeout. '
+      'sessionId=$sessionId knownMessages=${previews.join(" | ")}',
+    );
+  }
+}
+
 Future<void> _handleCommand({
+  required WidgetTester tester,
   required ProviderContainer container,
   required File eventsFile,
   required Map<String, dynamic> command,
@@ -490,6 +581,21 @@ Future<void> _handleCommand({
         await ok({});
         return;
 
+      case 'send_message_ui':
+        final sessionId = payload['sessionId']?.toString() ?? '';
+        final text = payload['text']?.toString() ?? '';
+        if (sessionId.isEmpty || text.isEmpty) {
+          throw ArgumentError('send_message_ui requires sessionId and text');
+        }
+        await _sendMessageInUi(
+          tester,
+          container,
+          sessionId: sessionId,
+          text: text,
+        );
+        await ok({});
+        return;
+
       case 'send_typing':
         final sessionId = payload['sessionId']?.toString() ?? '';
         if (sessionId.isEmpty) {
@@ -537,6 +643,35 @@ Future<void> _handleCommand({
         }
 
         await ok({'text': text});
+        return;
+
+      case 'wait_for_message_ui':
+        final sessionId = payload['sessionId']?.toString() ?? '';
+        final text = payload['text']?.toString() ?? '';
+        if (sessionId.isEmpty || text.isEmpty) {
+          throw ArgumentError('wait_for_message_ui requires sessionId and text');
+        }
+
+        final timeoutMsRaw = payload['timeoutMs'];
+        final timeoutMs = timeoutMsRaw is num ? timeoutMsRaw.toInt() : 30000;
+        final incomingOnly = payload['incomingOnly'] == true;
+
+        final visible = await _waitForMessageInUi(
+          tester,
+          container,
+          sessionId: sessionId,
+          text: text,
+          timeout: Duration(milliseconds: timeoutMs),
+          incomingOnly: incomingOnly,
+        );
+        if (!visible) {
+          throw TimeoutException(
+            'Timed out waiting for message in chat UI',
+            Duration(milliseconds: timeoutMs),
+          );
+        }
+
+        await ok({'sessionId': sessionId, 'text': text});
         return;
 
       case 'wait_for_message_meta':
@@ -737,6 +872,7 @@ Future<void> _handleCommand({
 }
 
 Future<void> _runBridgeLoop({
+  required WidgetTester tester,
   required ProviderContainer container,
   required File commandsFile,
   required File eventsFile,
@@ -763,6 +899,7 @@ Future<void> _runBridgeLoop({
 
         try {
           await _handleCommand(
+            tester: tester,
             container: container,
             eventsFile: eventsFile,
             command: command,
@@ -876,6 +1013,7 @@ void main() {
       });
 
       await _runBridgeLoop(
+        tester: tester,
         container: container,
         commandsFile: commandsFile,
         eventsFile: eventsFile,

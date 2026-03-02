@@ -51,6 +51,7 @@ mixin SeenSyncMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   @protected
   void scheduleSeenSync() {
+    if (!mounted) return;
     if (_seenSyncInFlight || !isAppResumed || !hasUnseenIncomingMessages) {
       return;
     }
@@ -58,9 +59,21 @@ mixin SeenSyncMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     _seenSyncInFlight = true;
     unawaited(() async {
       try {
-        await markConversationSeen();
+        if (!mounted) return;
+        try {
+          await markConversationSeen();
+        } catch (_) {
+          // Best-effort task; provider/widget may be disposing.
+          return;
+        }
+        if (!mounted) return;
         if (isAppResumed) {
-          await afterConversationSeen();
+          try {
+            await afterConversationSeen();
+          } catch (_) {
+            // Best-effort task; provider/widget may be disposing.
+            return;
+          }
         }
       } finally {
         _seenSyncInFlight = false;

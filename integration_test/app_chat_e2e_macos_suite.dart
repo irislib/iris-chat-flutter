@@ -87,17 +87,21 @@ class _AppInstance {
   String get ndrPath => '${rootDir.path}/ndr';
 
   Future<void> dispose() async {
+    final sessionManager = container.read(sessionManagerServiceProvider);
+    final nostrService = container.read(nostrServiceProvider);
+    final database = container.read(databaseServiceProvider);
+    container.dispose();
+
     // Best-effort cleanup; test failures should still unwind.
     try {
-      await container.read(sessionManagerServiceProvider).dispose();
+      await sessionManager.dispose();
     } catch (_) {}
     try {
-      await container.read(nostrServiceProvider).dispose();
+      await nostrService.dispose();
     } catch (_) {}
     try {
-      await container.read(databaseServiceProvider).close();
+      await database.close();
     } catch (_) {}
-    container.dispose();
     if (deleteRootOnDispose) {
       try {
         await rootDir.delete(recursive: true);
@@ -618,6 +622,10 @@ void main() {
         },
       );
     } finally {
+      // Dispose ChatScreen from widget tree before disposing providers to avoid
+      // late seen-sync callbacks touching disposed notifiers.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
       await alice?.dispose();
       await bob?.dispose();
       await relay.stop();
@@ -929,6 +937,128 @@ void main() {
         if (find.byType(TypingDots).evaluate().isEmpty) break;
       }
       expect(find.byType(TypingDots), findsNothing);
+    } finally {
+      await alice?.dispose();
+      await bob?.dispose();
+      await relay.stop();
+    }
+  });
+
+  testWidgets('incoming burst keeps latest message visible when chat is open', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    if (!Platform.isMacOS) {
+      return;
+    }
+
+    await tester.binding.setSurfaceSize(const Size(1280, 860));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final relay = await TestRelay.start();
+    final relayUrl = 'ws://127.0.0.1:${relay.port}';
+
+    _AppInstance? alice;
+    _AppInstance? bob;
+
+    try {
+      alice = await _startInstance(name: 'alice-ui-burst', relayUrl: relayUrl);
+      bob = await _startInstance(name: 'bob-ui-burst', relayUrl: relayUrl);
+
+      final aliceC = alice.container;
+      final bobC = bob.container;
+
+      final invite = await aliceC
+          .read(inviteStateProvider.notifier)
+          .createInvite(maxUses: 1);
+      expect(invite, isNotNull);
+
+      final inviteUrl = await aliceC
+          .read(inviteStateProvider.notifier)
+          .getInviteUrl(invite!.id);
+      expect(inviteUrl, isNotNull);
+
+      final data = decodeInviteUrlData(inviteUrl!);
+      final eph =
+          data?['ephemeralKey'] ??
+          data?['inviterEphemeralPublicKey'] ??
+          data?['inviterEphemeralPublicKeyHex'];
+      final inviteEph = eph is String ? eph : eph?.toString();
+      expect(inviteEph, isNotNull);
+
+      await _pumpUntil(
+        condition: () =>
+            relay.hasKindAndPTagSubscription(kind: 1059, pTagValue: inviteEph!),
+        timeout: const Duration(seconds: 6),
+      );
+
+      final bobSessionId = await bobC
+          .read(inviteStateProvider.notifier)
+          .acceptInviteFromUrl(inviteUrl);
+      expect(bobSessionId, isNotNull);
+
+      final bobOwnerPubkey = bobC.read(authStateProvider).pubkeyHex;
+      expect(bobOwnerPubkey, isNotNull);
+
+      await _pumpUntil(
+        condition: () {
+          final sessions = aliceC.read(sessionStateProvider).sessions;
+          return sessions.any((s) => s.recipientPubkeyHex == bobOwnerPubkey);
+        },
+      );
+
+      final aliceSession = aliceC
+          .read(sessionStateProvider)
+          .sessions
+          .firstWhere((s) => s.recipientPubkeyHex == bobOwnerPubkey);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: aliceC,
+          child: MaterialApp(home: ChatScreen(sessionId: aliceSession.id)),
+        ),
+      );
+      await tester.pump();
+
+      final burst = List<String>.generate(
+        8,
+        (i) => 'ui burst bob->alice #$i ${DateTime.now().millisecondsSinceEpoch}',
+      );
+
+      await Future.wait(
+        burst.map(
+          (text) => bobC
+              .read(chatStateProvider.notifier)
+              .sendMessage(bobSessionId!, text),
+        ),
+      );
+
+      await _pumpUntil(
+        condition: () {
+          final msgs = aliceC.read(chatStateProvider).messages[aliceSession.id] ??
+              const <dynamic>[];
+          final incomingTexts = msgs
+              .where((m) => m.isIncoming)
+              .map((m) => m.text)
+              .toSet();
+          return burst.every(incomingTexts.contains);
+        },
+        timeout: const Duration(seconds: 30),
+      );
+
+      final last = burst.last;
+      final deadline = DateTime.now().add(const Duration(seconds: 8));
+      while (DateTime.now().isBefore(deadline)) {
+        await tester.pump(const Duration(milliseconds: 120));
+        if (find.text(last).evaluate().isNotEmpty) break;
+      }
+
+      expect(
+        find.text(last),
+        findsOneWidget,
+        reason: 'Latest incoming message should stay visible when chat is open',
+      );
     } finally {
       await alice?.dispose();
       await bob?.dispose();
