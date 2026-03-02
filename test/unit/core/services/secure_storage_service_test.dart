@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_chat/core/services/secure_storage_service.dart';
@@ -181,6 +183,52 @@ void main() {
         verify(() => mockStorage.delete(key: 'iris_chat_privkey')).called(1);
         verify(() => mockStorage.delete(key: 'iris_chat_pubkey')).called(1);
       });
+
+      test(
+        'does not restore stale key from an in-flight read after logout and signup',
+        () async {
+          final firstIdentityRead = Completer<String?>();
+
+          var identityReadCount = 0;
+          when(() => mockStorage.read(key: 'iris_chat_identity')).thenAnswer((
+            _,
+          ) {
+            identityReadCount += 1;
+            if (identityReadCount == 1) {
+              return firstIdentityRead.future;
+            }
+            return Future.value('{"privkeyHex":"new","pubkeyHex":"newpub"}');
+          });
+          when(
+            () => mockStorage.read(key: 'iris_chat_privkey'),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockStorage.read(key: 'iris_chat_pubkey'),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockStorage.write(
+              key: any(named: 'key'),
+              value: any(named: 'value'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockStorage.delete(key: any(named: 'key')),
+          ).thenAnswer((_) async {});
+
+          final pendingOldRead = service.getPrivateKey();
+          await Future<void>.delayed(Duration.zero);
+
+          await service.clearIdentity();
+          await service.saveIdentity(privkeyHex: 'new', pubkeyHex: 'newpub');
+
+          firstIdentityRead.complete(
+            '{"privkeyHex":"old","pubkeyHex":"oldpub"}',
+          );
+          await pendingOldRead;
+
+          expect(await service.getPrivateKey(), 'new');
+        },
+      );
     });
 
     group('deleteAll', () {

@@ -99,8 +99,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!state.isAuthenticated) return;
 
     await _autoRegisterCurrentDeviceForNewIdentity();
+    await _ensureSignupInviteLink();
     if (!mounted) return;
     context.go('/chats');
+  }
+
+  Future<void> _ensureSignupInviteLink() async {
+    try {
+      await ref
+          .read(inviteStateProvider.notifier)
+          .ensurePublishedPublicInvite()
+          .timeout(const Duration(seconds: 6));
+    } catch (_) {
+      // Non-blocking: signup should succeed even if invite publish/storage fails.
+    }
   }
 
   Future<void> _autoRegisterCurrentDeviceForNewIdentity() async {

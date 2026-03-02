@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iris_chat/config/providers/auth_provider.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
+import 'package:iris_chat/config/providers/invite_provider.dart';
 import 'package:iris_chat/config/providers/login_device_registration_provider.dart';
 import 'package:iris_chat/core/ffi/ndr_ffi.dart';
 import 'package:iris_chat/core/services/database_service.dart';
 import 'package:iris_chat/features/auth/domain/models/identity.dart';
 import 'package:iris_chat/features/auth/domain/repositories/auth_repository.dart';
 import 'package:iris_chat/features/auth/presentation/screens/login_screen.dart';
+import 'package:iris_chat/features/invite/data/datasources/invite_local_datasource.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
@@ -21,15 +24,32 @@ class MockDatabaseService extends Mock implements DatabaseService {}
 class MockLoginDeviceRegistrationService extends Mock
     implements LoginDeviceRegistrationService {}
 
+class MockInviteLocalDatasource extends Mock implements InviteLocalDatasource {}
+
+class _TestLoginInviteNotifier extends InviteNotifier {
+  // ignore: use_super_parameters
+  _TestLoginInviteNotifier(InviteLocalDatasource datasource, Ref ref)
+    : super(datasource, ref);
+
+  int ensurePublishedPublicInviteCalls = 0;
+
+  @override
+  Future<void> ensurePublishedPublicInvite() async {
+    ensurePublishedPublicInviteCalls += 1;
+  }
+}
+
 void main() {
   late MockAuthRepository mockAuthRepo;
   late MockDatabaseService mockDatabaseService;
   late MockLoginDeviceRegistrationService mockLoginDeviceRegistrationService;
+  late MockInviteLocalDatasource mockInviteDatasource;
 
   setUp(() {
     mockAuthRepo = MockAuthRepository();
     mockDatabaseService = MockDatabaseService();
     mockLoginDeviceRegistrationService = MockLoginDeviceRegistrationService();
+    mockInviteDatasource = MockInviteLocalDatasource();
     when(() => mockDatabaseService.deleteDatabase()).thenAnswer((_) async {});
     when(
       () => mockLoginDeviceRegistrationService.buildPreviewFromPrivateKeyNsec(
@@ -63,12 +83,21 @@ void main() {
     ).thenAnswer((_) async {});
   });
 
-  Widget buildLoginScreen({AuthState? initialAuthState}) {
+  Widget buildLoginScreen({
+    AuthState? initialAuthState,
+    void Function(_TestLoginInviteNotifier notifier)? onInviteNotifierCreated,
+  }) {
     return createTestApp(
       const LoginScreen(),
       overrides: [
         authRepositoryProvider.overrideWithValue(mockAuthRepo),
         databaseServiceProvider.overrideWithValue(mockDatabaseService),
+        inviteDatasourceProvider.overrideWithValue(mockInviteDatasource),
+        inviteStateProvider.overrideWith((ref) {
+          final notifier = _TestLoginInviteNotifier(mockInviteDatasource, ref);
+          onInviteNotifierCreated?.call(notifier);
+          return notifier;
+        }),
         loginDeviceRegistrationServiceProvider.overrideWithValue(
           mockLoginDeviceRegistrationService,
         ),
@@ -81,7 +110,9 @@ void main() {
     );
   }
 
-  Widget buildLoginScreenRouter() {
+  Widget buildLoginScreenRouter({
+    void Function(_TestLoginInviteNotifier notifier)? onInviteNotifierCreated,
+  }) {
     final router = GoRouter(
       initialLocation: '/login',
       routes: [
@@ -102,6 +133,12 @@ void main() {
       overrides: [
         authRepositoryProvider.overrideWithValue(mockAuthRepo),
         databaseServiceProvider.overrideWithValue(mockDatabaseService),
+        inviteDatasourceProvider.overrideWithValue(mockInviteDatasource),
+        inviteStateProvider.overrideWith((ref) {
+          final notifier = _TestLoginInviteNotifier(mockInviteDatasource, ref);
+          onInviteNotifierCreated?.call(notifier);
+          return notifier;
+        }),
         loginDeviceRegistrationServiceProvider.overrideWithValue(
           mockLoginDeviceRegistrationService,
         ),
@@ -265,6 +302,32 @@ void main() {
             devicePubkeyHex: testPubkeyHex,
           ),
         ).called(1);
+      });
+
+      testWidgets('create identity auto-generates signup invite link', (
+        tester,
+      ) async {
+        _TestLoginInviteNotifier? inviteNotifier;
+
+        when(
+          () => mockAuthRepo.createIdentity(),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+        when(
+          () => mockAuthRepo.getPrivateKey(),
+        ).thenAnswer((_) async => testPrivkeyHex);
+
+        await tester.pumpWidget(
+          buildLoginScreenRouter(
+            onInviteNotifierCreated: (notifier) => inviteNotifier = notifier,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Create New Identity'));
+        await tester.pumpAndSettle();
+
+        expect(inviteNotifier, isNotNull);
+        expect(inviteNotifier!.ensurePublishedPublicInviteCalls, 1);
       });
     });
 

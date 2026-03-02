@@ -54,6 +54,7 @@ class SecureStorageService {
   Map<String, String>? _cachedIdentity;
   bool _identityCacheLoaded = false;
   Future<Map<String, String>?>? _identityLoadFuture;
+  int _identityStateVersion = 0;
 
   Map<String, String>? _parseIdentityJson(String raw) {
     try {
@@ -75,35 +76,45 @@ class SecureStorageService {
     final inflight = _identityLoadFuture;
     if (inflight != null) return inflight;
 
+    final loadVersion = _identityStateVersion;
     _identityLoadFuture = () async {
+      Map<String, String>? resolvedIdentity;
+
       // Preferred: single-item identity blob.
       final raw = await _storage.read(key: _identityKey);
       if (raw != null && raw.isNotEmpty) {
         final parsed = _parseIdentityJson(raw);
         if (parsed != null) {
-          _cachedIdentity = parsed;
-          _identityCacheLoaded = true;
-          return parsed;
+          resolvedIdentity = parsed;
         }
       }
 
-      // Legacy fallback: migrate from two-key storage.
-      final priv = await _storage.read(key: _privkeyKey);
-      final pub = await _storage.read(key: _pubkeyKey);
-      if (priv != null && priv.isNotEmpty && pub != null && pub.isNotEmpty) {
-        await saveIdentity(privkeyHex: priv, pubkeyHex: pub);
+      if (resolvedIdentity == null) {
+        // Legacy fallback: migrate from two-key storage.
+        final priv = await _storage.read(key: _privkeyKey);
+        final pub = await _storage.read(key: _pubkeyKey);
+        if (priv != null && priv.isNotEmpty && pub != null && pub.isNotEmpty) {
+          await saveIdentity(privkeyHex: priv, pubkeyHex: pub);
+          return _cachedIdentity;
+        }
+      }
+
+      if (loadVersion != _identityStateVersion) {
+        // Identity changed while this read was in-flight.
         return _cachedIdentity;
       }
 
-      _cachedIdentity = null;
+      _cachedIdentity = resolvedIdentity;
       _identityCacheLoaded = true;
-      return null;
+      return resolvedIdentity;
     }();
 
     final future = _identityLoadFuture;
     if (future == null) return null;
     final result = await future;
-    _identityLoadFuture = null;
+    if (identical(_identityLoadFuture, future)) {
+      _identityLoadFuture = null;
+    }
     return result;
   }
 
@@ -128,6 +139,7 @@ class SecureStorageService {
 
     _cachedIdentity = {'privkeyHex': privkeyHex, 'pubkeyHex': pubkeyHex};
     _identityCacheLoaded = true;
+    _identityStateVersion += 1;
   }
 
   /// Save the user's private key.
@@ -136,6 +148,7 @@ class SecureStorageService {
     // Clear cache; legacy writes should not reuse a cached identity blob.
     _cachedIdentity = null;
     _identityCacheLoaded = false;
+    _identityStateVersion += 1;
   }
 
   /// Get the stored private key.
@@ -151,6 +164,7 @@ class SecureStorageService {
     await _storage.write(key: _pubkeyKey, value: pubkeyHex);
     _cachedIdentity = null;
     _identityCacheLoaded = false;
+    _identityStateVersion += 1;
   }
 
   /// Get the stored public key.
@@ -174,6 +188,7 @@ class SecureStorageService {
     await _storage.delete(key: _pubkeyKey);
     _cachedIdentity = null;
     _identityCacheLoaded = false;
+    _identityStateVersion += 1;
   }
 
   /// Delete all stored data.
@@ -181,5 +196,6 @@ class SecureStorageService {
     await _storage.deleteAll();
     _cachedIdentity = null;
     _identityCacheLoaded = false;
+    _identityStateVersion += 1;
   }
 }
