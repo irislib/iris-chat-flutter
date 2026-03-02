@@ -1166,6 +1166,8 @@ class SettingsScreen extends ConsumerWidget {
       await ref.read(databaseServiceProvider).deleteDatabase();
       _invalidateChatProviders(ref);
       await ref.read(authStateProvider.notifier).logout();
+      ref.invalidate(authRepositoryProvider);
+      ref.invalidate(secureStorageProvider);
       if (context.mounted) {
         context.go('/login');
       }
@@ -1209,6 +1211,8 @@ class SettingsScreen extends ConsumerWidget {
 
       // Logout (clears auth state)
       await ref.read(authStateProvider.notifier).logout();
+      ref.invalidate(authRepositoryProvider);
+      ref.invalidate(secureStorageProvider);
 
       if (context.mounted) {
         context.go('/login');

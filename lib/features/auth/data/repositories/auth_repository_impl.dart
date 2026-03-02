@@ -86,7 +86,9 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<void> logout() async {
-    await _storage.clearIdentity();
+    // Wipe all secure-storage entries to avoid stale identity rehydration from
+    // legacy keys or platform-specific duplicated records.
+    await _storage.deleteAll();
   }
 
   @override

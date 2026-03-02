@@ -60,12 +60,12 @@ void main() {
     });
 
     group('logout', () {
-      test('clears identity from storage', () async {
-        when(() => mockStorage.clearIdentity()).thenAnswer((_) async {});
+      test('clears all secure storage data', () async {
+        when(() => mockStorage.deleteAll()).thenAnswer((_) async {});
 
         await repository.logout();
 
-        verify(() => mockStorage.clearIdentity()).called(1);
+        verify(() => mockStorage.deleteAll()).called(1);
       });
     });
 
