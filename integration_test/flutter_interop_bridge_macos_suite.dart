@@ -11,10 +11,12 @@ import 'package:iris_chat/config/providers/auth_provider.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
 import 'package:iris_chat/config/providers/invite_provider.dart';
 import 'package:iris_chat/config/providers/nostr_provider.dart';
+import 'package:iris_chat/core/ffi/ndr_ffi.dart';
 import 'package:iris_chat/core/services/database_service.dart';
 import 'package:iris_chat/core/services/nostr_service.dart';
 import 'package:iris_chat/core/services/secure_storage_service.dart';
 import 'package:iris_chat/core/services/session_manager_service.dart';
+import 'package:iris_chat/core/utils/invite_url.dart';
 import 'package:iris_chat/features/chat/presentation/screens/chat_screen.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -82,6 +84,12 @@ ProviderContainer _makeContainer({
         return service;
       }),
       sessionManagerServiceProvider.overrideWith((ref) {
+        ref.watch(
+          authStateProvider.select(
+            (s) => (s.isAuthenticated, s.pubkeyHex, s.devicePubkeyHex),
+          ),
+        );
+
         final nostr = ref.watch(nostrServiceProvider);
         final auth = ref.watch(authRepositoryProvider);
 
@@ -117,6 +125,29 @@ Future<void> _emitEvent(File eventsFile, Map<String, dynamic> event) async {
   await eventsFile.writeAsString('$line\n', mode: FileMode.append, flush: true);
   // Keep a mirrored stdout breadcrumb for easier local debugging.
   stdout.writeln('IRIS_FLUTTER_INTEROP_EVENT $line');
+}
+
+class _PendingLinkInvite {
+  const _PendingLinkInvite({
+    required this.invite,
+    required this.devicePrivkeyHex,
+    required this.ephemeralPubkeyHex,
+  });
+
+  final InviteHandle invite;
+  final String devicePrivkeyHex;
+  final String ephemeralPubkeyHex;
+}
+
+_PendingLinkInvite? _pendingLinkInvite;
+
+Future<void> _disposePendingLinkInvite() async {
+  final pending = _pendingLinkInvite;
+  _pendingLinkInvite = null;
+  if (pending == null) return;
+  try {
+    await pending.invite.dispose();
+  } catch (_) {}
 }
 
 class _MessageMatch {
@@ -412,7 +443,8 @@ Future<void> _sendMessageInUi(
     incomingOnly: false,
   );
   if (!sent) {
-    final messages = container.read(chatStateProvider).messages[sessionId] ?? [];
+    final messages =
+        container.read(chatStateProvider).messages[sessionId] ?? [];
     final previews = messages.map((m) => m.text).toList(growable: false);
     throw StateError(
       'UI send did not produce local message text within timeout. '
@@ -503,6 +535,132 @@ Future<void> _handleCommand({
         }
 
         await ok({'sessionId': sessionId});
+        return;
+
+      case 'create_link_invite':
+        await _disposePendingLinkInvite();
+        final nostrService = container.read(nostrServiceProvider);
+        await nostrService.connect();
+
+        final keypair = await NdrFfi.generateKeypair();
+        final invite = await NdrFfi.createInvite(
+          inviterPubkeyHex: keypair.publicKeyHex,
+          deviceId: keypair.publicKeyHex,
+          maxUses: 1,
+        );
+        await invite.setPurpose('link');
+        final inviteUrl = await invite.toUrl('https://iris.to');
+
+        final data = decodeInviteUrlData(inviteUrl);
+        final eph =
+            (data?['ephemeralKey'] ?? data?['inviterEphemeralPublicKey'])
+                as String?;
+        if (eph == null || eph.isEmpty) {
+          await invite.dispose();
+          throw StateError('Invite URL missing ephemeral key');
+        }
+
+        _pendingLinkInvite = _PendingLinkInvite(
+          invite: invite,
+          devicePrivkeyHex: keypair.privateKeyHex,
+          ephemeralPubkeyHex: eph,
+        );
+
+        await ok({'inviteUrl': inviteUrl, 'ephemeralPubkeyHex': eph});
+        return;
+
+      case 'wait_for_linked_device':
+        final pending = _pendingLinkInvite;
+        if (pending == null) {
+          throw StateError(
+            'No pending link invite. Call create_link_invite first.',
+          );
+        }
+
+        final timeoutMsRaw = payload['timeoutMs'];
+        final timeoutMs = timeoutMsRaw is num ? timeoutMsRaw.toInt() : 30000;
+        final timeout = Duration(milliseconds: timeoutMs);
+
+        final nostrService = container.read(nostrServiceProvider);
+        final subid = 'interop-link-${DateTime.now().microsecondsSinceEpoch}';
+        final completer = Completer<NostrEvent>();
+
+        final sub = nostrService.events.listen((event) {
+          if (completer.isCompleted) return;
+          if (event.subscriptionId != subid) return;
+          if (event.kind != 1059) return;
+          completer.complete(event);
+        });
+
+        InviteResponseResult? response;
+        try {
+          nostrService.subscribeWithId(
+            subid,
+            NostrFilter(
+              kinds: const [1059],
+              pTags: [pending.ephemeralPubkeyHex],
+            ),
+          );
+
+          final event = await completer.future.timeout(timeout);
+          response = await pending.invite.processResponse(
+            eventJson: jsonEncode(event.toJson()),
+            inviterPrivkeyHex: pending.devicePrivkeyHex,
+          );
+          if (response == null) {
+            throw StateError('Failed to process link invite response');
+          }
+
+          final ownerPubkeyHex =
+              (response.ownerPubkeyHex ?? response.inviteePubkeyHex)
+                  .toLowerCase();
+
+          await container
+              .read(authStateProvider.notifier)
+              .loginLinkedDevice(
+                ownerPubkeyHex: ownerPubkeyHex,
+                devicePrivkeyHex: pending.devicePrivkeyHex,
+              );
+
+          // Reload state and (re)wire subscriptions for the newly-linked identity.
+          container.read(messageSubscriptionProvider);
+          await container.read(sessionStateProvider.notifier).loadSessions();
+          await container.read(inviteStateProvider.notifier).loadInvites();
+
+          final authState = container.read(authStateProvider);
+          if (!authState.isAuthenticated || authState.pubkeyHex == null) {
+            throw StateError(authState.error ?? 'Linked-device login failed');
+          }
+
+          await ok({
+            'ownerPubkeyHex': ownerPubkeyHex,
+            'pubkeyHex': authState.pubkeyHex,
+            'devicePubkeyHex': authState.devicePubkeyHex,
+          });
+          return;
+        } finally {
+          nostrService.closeSubscription(subid);
+          await sub.cancel();
+          try {
+            await response?.session.dispose();
+          } catch (_) {}
+          await _disposePendingLinkInvite();
+        }
+
+      case 'accept_link_invite':
+        final inviteUrl = payload['inviteUrl']?.toString() ?? '';
+        if (inviteUrl.isEmpty) {
+          throw ArgumentError('accept_link_invite requires inviteUrl');
+        }
+        final linked = await container
+            .read(inviteStateProvider.notifier)
+            .acceptLinkInviteFromUrl(inviteUrl);
+        if (!linked) {
+          final err = container.read(inviteStateProvider).error;
+          throw StateError(err ?? 'Failed to accept link invite');
+        }
+
+        await ok({});
         return;
 
       case 'wait_for_session':
@@ -649,7 +807,9 @@ Future<void> _handleCommand({
         final sessionId = payload['sessionId']?.toString() ?? '';
         final text = payload['text']?.toString() ?? '';
         if (sessionId.isEmpty || text.isEmpty) {
-          throw ArgumentError('wait_for_message_ui requires sessionId and text');
+          throw ArgumentError(
+            'wait_for_message_ui requires sessionId and text',
+          );
         }
 
         final timeoutMsRaw = payload['timeoutMs'];
@@ -1019,6 +1179,7 @@ void main() {
         eventsFile: eventsFile,
       );
     } finally {
+      await _disposePendingLinkInvite();
       try {
         await container.read(sessionManagerServiceProvider).dispose();
       } catch (_) {}
