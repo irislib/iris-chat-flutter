@@ -13,7 +13,7 @@ class _NoopAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<Identity> login(String privkeyHex) {
+  Future<Identity> login(String privkeyHex, {String? devicePrivkeyHex}) {
     throw UnimplementedError();
   }
 
@@ -51,43 +51,45 @@ class _TestAuthNotifier extends AuthNotifier {
 
 void main() {
   group('nostr_provider', () {
-    test('sessionManagerServiceProvider rebuilds when auth identity changes', () async {
-      final authNotifier = _TestAuthNotifier();
+    test(
+      'sessionManagerServiceProvider rebuilds when auth identity changes',
+      () async {
+        final authNotifier = _TestAuthNotifier();
 
-      final container = ProviderContainer(
-        overrides: [
-          // Avoid real network connections in unit tests.
-          nostrServiceProvider.overrideWith(
-            (ref) => NostrService(relayUrls: const []),
-          ),
-          authRepositoryProvider.overrideWith((ref) => _NoopAuthRepository()),
-          authStateProvider.overrideWith((ref) => authNotifier),
-        ],
-      );
-      addTearDown(container.dispose);
+        final container = ProviderContainer(
+          overrides: [
+            // Avoid real network connections in unit tests.
+            nostrServiceProvider.overrideWith(
+              (ref) => NostrService(relayUrls: const []),
+            ),
+            authRepositoryProvider.overrideWith((ref) => _NoopAuthRepository()),
+            authStateProvider.overrideWith((ref) => authNotifier),
+          ],
+        );
+        addTearDown(container.dispose);
 
-      final instances = <Object>[];
-      final sub = container.listen(
-        sessionManagerServiceProvider,
-        (prev, next) => instances.add(next),
-        fireImmediately: true,
-      );
-      addTearDown(sub.close);
+        final instances = <Object>[];
+        final sub = container.listen(
+          sessionManagerServiceProvider,
+          (prev, next) => instances.add(next),
+          fireImmediately: true,
+        );
+        addTearDown(sub.close);
 
-      expect(instances, hasLength(1));
-      final first = instances.first;
+        expect(instances, hasLength(1));
+        final first = instances.first;
 
-      authNotifier.authState =
-        const AuthState(
+        authNotifier.authState = const AuthState(
           isAuthenticated: true,
           isInitialized: true,
           pubkeyHex: 'a',
           devicePubkeyHex: 'a',
         );
-      await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(instances, hasLength(2));
-      expect(identical(instances[1], first), isFalse);
-    });
+        expect(instances, hasLength(2));
+        expect(identical(instances[1], first), isFalse);
+      },
+    );
   });
 }

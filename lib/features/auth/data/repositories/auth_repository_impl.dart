@@ -7,6 +7,7 @@ import '../../domain/repositories/auth_repository.dart';
 
 const _invalidLoginPrivateKeyMessage =
     'Invalid private key format. Expected nsec.';
+const _invalidDevicePrivateKeyMessage = 'Invalid device private key format.';
 
 /// Implementation of [AuthRepository] using ndr-ffi and secure storage.
 class AuthRepositoryImpl implements AuthRepository {
@@ -29,21 +30,37 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<Identity> login(String privateKeyNsec) async {
-    final normalizedPrivkeyHex = _normalizePrivateKeyNsec(privateKeyNsec);
+  Future<Identity> login(
+    String privateKeyNsec, {
+    String? devicePrivkeyHex,
+  }) async {
+    final ownerPrivkeyHex = _normalizePrivateKeyNsec(privateKeyNsec);
+    final ownerPubkeyHex = await _derivePublicKey(ownerPrivkeyHex);
 
-    // Derive public key from private key
-    // For now, we'll need to implement this or use the FFI
-    // The ndr-ffi library should provide this functionality
-    final pubkeyHex = await _derivePublicKey(normalizedPrivkeyHex);
+    String normalizedDevicePrivkeyHex;
+    if (devicePrivkeyHex != null) {
+      normalizedDevicePrivkeyHex = devicePrivkeyHex.trim().toLowerCase();
+      if (!_isValidPrivateKey(normalizedDevicePrivkeyHex)) {
+        throw const InvalidKeyException(_invalidDevicePrivateKeyMessage);
+      }
+    } else {
+      final generated = await NdrFfi.generateKeypair();
+      normalizedDevicePrivkeyHex = generated.privateKeyHex.trim().toLowerCase();
+      if (!_isValidPrivateKey(normalizedDevicePrivkeyHex)) {
+        throw const InvalidKeyException(_invalidDevicePrivateKeyMessage);
+      }
+    }
 
-    // Store keys securely
+    // Validate that the selected device private key can derive a pubkey.
+    await _derivePublicKey(normalizedDevicePrivkeyHex);
+
+    // Store device private key linked to owner identity pubkey.
     await _storage.saveIdentity(
-      privkeyHex: normalizedPrivkeyHex,
-      pubkeyHex: pubkeyHex,
+      privkeyHex: normalizedDevicePrivkeyHex,
+      pubkeyHex: ownerPubkeyHex,
     );
 
-    return Identity(pubkeyHex: pubkeyHex, createdAt: DateTime.now());
+    return Identity(pubkeyHex: ownerPubkeyHex, createdAt: DateTime.now());
   }
 
   @override

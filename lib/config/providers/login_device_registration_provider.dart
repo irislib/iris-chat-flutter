@@ -16,6 +16,7 @@ class LoginDeviceRegistrationPreview {
   const LoginDeviceRegistrationPreview({
     required this.ownerPubkeyHex,
     required this.ownerPrivkeyHex,
+    required this.currentDevicePrivkeyHex,
     required this.currentDevicePubkeyHex,
     required this.existingDevices,
     required this.devicesIfRegistered,
@@ -25,6 +26,7 @@ class LoginDeviceRegistrationPreview {
 
   final String ownerPubkeyHex;
   final String ownerPrivkeyHex;
+  final String currentDevicePrivkeyHex;
   final String currentDevicePubkeyHex;
   final List<FfiDeviceEntry> existingDevices;
   final List<FfiDeviceEntry> devicesIfRegistered;
@@ -70,7 +72,13 @@ class LoginDeviceRegistrationServiceImpl
     final ownerPubkeyHex = (await NdrFfi.derivePublicKey(
       ownerPrivkeyHex,
     )).trim().toLowerCase();
-    final currentDevicePubkeyHex = ownerPubkeyHex;
+    final deviceKeypair = await NdrFfi.generateKeypair();
+    final currentDevicePrivkeyHex = deviceKeypair.privateKeyHex
+        .trim()
+        .toLowerCase();
+    final currentDevicePubkeyHex = deviceKeypair.publicKeyHex
+        .trim()
+        .toLowerCase();
 
     Map<String, int> existingMap = <String, int>{};
     String? loadError;
@@ -93,6 +101,7 @@ class LoginDeviceRegistrationServiceImpl
     return LoginDeviceRegistrationPreview(
       ownerPubkeyHex: ownerPubkeyHex,
       ownerPrivkeyHex: ownerPrivkeyHex,
+      currentDevicePrivkeyHex: currentDevicePrivkeyHex,
       currentDevicePubkeyHex: currentDevicePubkeyHex,
       existingDevices: existing,
       devicesIfRegistered: projected,

@@ -157,6 +157,65 @@ void main() {
     });
 
     group('login with valid key', () {
+      test(
+        'stores a generated device key and keeps nsec pubkey as owner',
+        () async {
+          const generatedDevicePrivkey =
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+          const generatedDevicePubkey =
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+          // Mock the MethodChannel for ndr-ffi
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(
+                const MethodChannel('to.iris.chat/ndr_ffi'),
+                (MethodCall methodCall) async {
+                  if (methodCall.method == 'generateKeypair') {
+                    return {
+                      'publicKeyHex': generatedDevicePubkey,
+                      'privateKeyHex': generatedDevicePrivkey,
+                    };
+                  }
+                  if (methodCall.method == 'derivePublicKey') {
+                    final args = methodCall.arguments as Map<dynamic, dynamic>;
+                    final privkeyHex = args['privkeyHex'] as String;
+                    if (privkeyHex == testPrivkey) {
+                      return testPubkey;
+                    }
+                    if (privkeyHex == generatedDevicePrivkey) {
+                      return generatedDevicePubkey;
+                    }
+                  }
+                  return null;
+                },
+              );
+
+          when(
+            () => mockStorage.saveIdentity(
+              privkeyHex: any(named: 'privkeyHex'),
+              pubkeyHex: any(named: 'pubkeyHex'),
+            ),
+          ).thenAnswer((_) async {});
+
+          final result = await repository.login(testPrivkeyNsec);
+
+          expect(result.pubkeyHex, testPubkey);
+          verify(
+            () => mockStorage.saveIdentity(
+              privkeyHex: generatedDevicePrivkey,
+              pubkeyHex: testPubkey,
+            ),
+          ).called(1);
+
+          // Clean up mock
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(
+                const MethodChannel('to.iris.chat/ndr_ffi'),
+                null,
+              );
+        },
+      );
+
       test('derives public key and stores identity from nsec', () async {
         // Mock the MethodChannel for ndr-ffi
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -179,7 +238,10 @@ void main() {
           ),
         ).thenAnswer((_) async {});
 
-        final result = await repository.login(testPrivkeyNsec);
+        final result = await repository.login(
+          testPrivkeyNsec,
+          devicePrivkeyHex: testPrivkey,
+        );
 
         expect(result.pubkeyHex, testPubkey);
         verify(
@@ -218,7 +280,10 @@ void main() {
           ),
         ).thenAnswer((_) async {});
 
-        final result = await repository.login('nostr:$testPrivkeyNsec');
+        final result = await repository.login(
+          'nostr:$testPrivkeyNsec',
+          devicePrivkeyHex: testPrivkey,
+        );
 
         expect(result.pubkeyHex, testPubkey);
         verify(

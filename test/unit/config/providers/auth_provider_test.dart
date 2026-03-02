@@ -46,12 +46,12 @@ void main() {
       test('sets isAuthenticated true when identity exists', () async {
         const testPubkey =
             'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-        when(() => mockRepo.getCurrentIdentity()).thenAnswer(
-          (_) async => const Identity(pubkeyHex: testPubkey),
-        );
-        when(() => mockRepo.getDevicePubkeyHex()).thenAnswer(
-          (_) async => testPubkey,
-        );
+        when(
+          () => mockRepo.getCurrentIdentity(),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkey));
+        when(
+          () => mockRepo.getDevicePubkeyHex(),
+        ).thenAnswer((_) async => testPubkey);
 
         await notifier.checkAuth();
 
@@ -62,32 +62,32 @@ void main() {
         expect(notifier.state.isInitialized, true);
       });
 
-      test('sets isLinkedDevice true when owner differs from device pubkey',
-          () async {
-        const ownerPubkey =
-            'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-        const devicePubkey =
-            'b1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-        when(() => mockRepo.getCurrentIdentity()).thenAnswer(
-          (_) async => const Identity(pubkeyHex: ownerPubkey),
-        );
-        when(() => mockRepo.getDevicePubkeyHex()).thenAnswer(
-          (_) async => devicePubkey,
-        );
+      test(
+        'sets isLinkedDevice true when owner differs from device pubkey',
+        () async {
+          const ownerPubkey =
+              'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+          const devicePubkey =
+              'b1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+          when(
+            () => mockRepo.getCurrentIdentity(),
+          ).thenAnswer((_) async => const Identity(pubkeyHex: ownerPubkey));
+          when(
+            () => mockRepo.getDevicePubkeyHex(),
+          ).thenAnswer((_) async => devicePubkey);
 
-        await notifier.checkAuth();
+          await notifier.checkAuth();
 
-        expect(notifier.state.isAuthenticated, true);
-        expect(notifier.state.pubkeyHex, ownerPubkey);
-        expect(notifier.state.devicePubkeyHex, devicePubkey);
-        expect(notifier.state.isLinkedDevice, true);
-        expect(notifier.state.isInitialized, true);
-      });
+          expect(notifier.state.isAuthenticated, true);
+          expect(notifier.state.pubkeyHex, ownerPubkey);
+          expect(notifier.state.devicePubkeyHex, devicePubkey);
+          expect(notifier.state.isLinkedDevice, true);
+          expect(notifier.state.isInitialized, true);
+        },
+      );
 
       test('sets isAuthenticated false when no identity', () async {
-        when(() => mockRepo.getCurrentIdentity()).thenAnswer(
-          (_) async => null,
-        );
+        when(() => mockRepo.getCurrentIdentity()).thenAnswer((_) async => null);
 
         await notifier.checkAuth();
 
@@ -97,9 +97,9 @@ void main() {
       });
 
       test('sets error on exception', () async {
-        when(() => mockRepo.getCurrentIdentity()).thenThrow(
-          Exception('Storage error'),
-        );
+        when(
+          () => mockRepo.getCurrentIdentity(),
+        ).thenThrow(Exception('Storage error'));
 
         await notifier.checkAuth();
 
@@ -113,9 +113,9 @@ void main() {
       test('sets authenticated on success', () async {
         const testPubkey =
             'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-        when(() => mockRepo.createIdentity()).thenAnswer(
-          (_) async => const Identity(pubkeyHex: testPubkey),
-        );
+        when(
+          () => mockRepo.createIdentity(),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkey));
 
         await notifier.createIdentity();
 
@@ -127,9 +127,9 @@ void main() {
       });
 
       test('sets error on failure', () async {
-        when(() => mockRepo.createIdentity()).thenThrow(
-          Exception('Keygen failed'),
-        );
+        when(
+          () => mockRepo.createIdentity(),
+        ).thenThrow(Exception('Keygen failed'));
 
         await notifier.createIdentity();
 
@@ -140,14 +140,44 @@ void main() {
     });
 
     group('login', () {
+      test(
+        'sets linked-device state when login stores a separate device key',
+        () async {
+          const ownerPubkey =
+              'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+          const devicePubkey =
+              'c1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+
+          when(
+            () => mockRepo.login(
+              any(),
+              devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+            ),
+          ).thenAnswer((_) async => const Identity(pubkeyHex: ownerPubkey));
+          when(
+            () => mockRepo.getDevicePubkeyHex(),
+          ).thenAnswer((_) async => devicePubkey);
+
+          await notifier.login('nsec1example');
+
+          expect(notifier.state.isAuthenticated, true);
+          expect(notifier.state.pubkeyHex, ownerPubkey);
+          expect(notifier.state.devicePubkeyHex, devicePubkey);
+          expect(notifier.state.isLinkedDevice, true);
+        },
+      );
+
       test('sets authenticated on success', () async {
         const testPrivkey =
             'f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2';
         const testPubkey =
             'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-        when(() => mockRepo.login(testPrivkey)).thenAnswer(
-          (_) async => const Identity(pubkeyHex: testPubkey),
-        );
+        when(
+          () => mockRepo.login(testPrivkey, devicePrivkeyHex: null),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkey));
+        when(
+          () => mockRepo.getDevicePubkeyHex(),
+        ).thenAnswer((_) async => testPubkey);
 
         await notifier.login(testPrivkey);
 
@@ -158,9 +188,12 @@ void main() {
       });
 
       test('sets error on InvalidKeyException', () async {
-        when(() => mockRepo.login(any())).thenThrow(
-          const InvalidKeyException('Invalid key format'),
-        );
+        when(
+          () => mockRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
+        ).thenThrow(const InvalidKeyException('Invalid key format'));
 
         await notifier.login('invalid');
 
@@ -184,9 +217,9 @@ void main() {
             devicePrivkeyHex: devicePrivkey,
           ),
         ).thenAnswer((_) async => const Identity(pubkeyHex: ownerPubkey));
-        when(() => mockRepo.getDevicePubkeyHex()).thenAnswer(
-          (_) async => devicePubkey,
-        );
+        when(
+          () => mockRepo.getDevicePubkeyHex(),
+        ).thenAnswer((_) async => devicePubkey);
 
         await notifier.loginLinkedDevice(
           ownerPubkeyHex: ownerPubkey,
@@ -203,10 +236,11 @@ void main() {
     group('logout', () {
       test('clears authenticated state', () async {
         // First, set up authenticated state
-        const testPubkey = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-        when(() => mockRepo.createIdentity()).thenAnswer(
-          (_) async => const Identity(pubkeyHex: testPubkey),
-        );
+        const testPubkey =
+            'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+        when(
+          () => mockRepo.createIdentity(),
+        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkey));
         await notifier.createIdentity();
         expect(notifier.state.isAuthenticated, true);
 
@@ -224,7 +258,12 @@ void main() {
 
     group('clearError', () {
       test('clears error state', () async {
-        when(() => mockRepo.login(any())).thenThrow(Exception('Error'));
+        when(
+          () => mockRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
+        ).thenThrow(Exception('Error'));
         await notifier.login('bad');
         expect(notifier.state.error, isNotNull);
 

@@ -8,7 +8,7 @@ abstract class AuthRepository {
   /// Login with an existing private key in `nsec` (NIP-19) format.
   ///
   /// Throws [InvalidKeyException] if the key is invalid.
-  Future<Identity> login(String privateKeyNsec);
+  Future<Identity> login(String privateKeyNsec, {String? devicePrivkeyHex});
 
   /// Login as a linked device using a device private key and an owner pubkey.
   ///

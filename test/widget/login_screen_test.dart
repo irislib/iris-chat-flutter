@@ -52,6 +52,15 @@ void main() {
     mockInviteDatasource = MockInviteLocalDatasource();
     when(() => mockDatabaseService.deleteDatabase()).thenAnswer((_) async {});
     when(
+      () => mockAuthRepo.login(
+        any(),
+        devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+      ),
+    ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+    when(
+      () => mockAuthRepo.getDevicePubkeyHex(),
+    ).thenAnswer((_) async => testPubkeyHex);
+    when(
       () => mockLoginDeviceRegistrationService.buildPreviewFromPrivateKeyNsec(
         any(),
       ),
@@ -59,6 +68,7 @@ void main() {
       (_) async => const LoginDeviceRegistrationPreview(
         ownerPubkeyHex: testPubkeyHex,
         ownerPrivkeyHex: testPrivkeyHex,
+        currentDevicePrivkeyHex: testPrivkeyHex,
         currentDevicePubkeyHex: testPubkeyHex,
         existingDevices: [],
         devicesIfRegistered: [
@@ -213,7 +223,10 @@ void main() {
       testWidgets('login button calls login with entered key', (tester) async {
         // Use a completer to control when the login completes
         when(
-          () => mockAuthRepo.login(any()),
+          () => mockAuthRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
         ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
 
         await tester.pumpWidget(buildLoginScreen());
@@ -229,7 +242,9 @@ void main() {
         // Only pump once to verify login was called, don't wait for navigation
         await tester.pump();
 
-        verify(() => mockAuthRepo.login(testPrivkeyHex)).called(1);
+        verify(
+          () => mockAuthRepo.login(testPrivkeyHex, devicePrivkeyHex: null),
+        ).called(1);
       }, skip: true);
 
       testWidgets('does not call login with empty key', (tester) async {
@@ -243,7 +258,12 @@ void main() {
         await tester.tap(find.text('Login'));
         await tester.pump();
 
-        verifyNever(() => mockAuthRepo.login(any()));
+        verifyNever(
+          () => mockAuthRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
+        );
       });
 
       testWidgets('obscures password input', (tester) async {
@@ -372,7 +392,10 @@ void main() {
     group('error handling', () {
       testWidgets('displays error message from state', (tester) async {
         when(
-          () => mockAuthRepo.login(any()),
+          () => mockAuthRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
         ).thenThrow(const InvalidKeyException('Invalid key format'));
 
         await tester.pumpWidget(buildLoginScreen());
@@ -392,7 +415,10 @@ void main() {
 
       testWidgets('error container has correct styling', (tester) async {
         when(
-          () => mockAuthRepo.login(any()),
+          () => mockAuthRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
         ).thenThrow(const InvalidKeyException('Test error'));
 
         await tester.pumpWidget(buildLoginScreen());
@@ -416,7 +442,10 @@ void main() {
         tester,
       ) async {
         when(
-          () => mockAuthRepo.login(any()),
+          () => mockAuthRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
         ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
 
         await tester.pumpWidget(buildLoginScreenRouter());
@@ -436,7 +465,10 @@ void main() {
         tester,
       ) async {
         when(
-          () => mockAuthRepo.login(any()),
+          () => mockAuthRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
         ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
 
         await tester.pumpWidget(buildLoginScreenRouter());
@@ -452,7 +484,12 @@ void main() {
         await tester.tap(find.text('Sign In Without Registering'));
         await tester.pumpAndSettle();
 
-        verify(() => mockAuthRepo.login('nsec1dummykey')).called(1);
+        verify(
+          () => mockAuthRepo.login(
+            'nsec1dummykey',
+            devicePrivkeyHex: testPrivkeyHex,
+          ),
+        ).called(1);
         verifyNever(
           () => mockLoginDeviceRegistrationService.publishDeviceList(
             ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
@@ -466,7 +503,10 @@ void main() {
         'pasting valid nsec auto-starts login without tapping button',
         (tester) async {
           when(
-            () => mockAuthRepo.login(any()),
+            () => mockAuthRepo.login(
+              any(),
+              devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+            ),
           ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
 
           final nsec = nostr.Nip19.encodePrivkey(testPrivkeyHex) as String;
@@ -486,13 +526,18 @@ void main() {
             () => mockLoginDeviceRegistrationService
                 .buildPreviewFromPrivateKeyNsec(any()),
           );
-          verify(() => mockAuthRepo.login(nsec)).called(1);
+          verify(
+            () => mockAuthRepo.login(nsec, devicePrivkeyHex: null),
+          ).called(1);
         },
       );
 
       testWidgets('can sign in and register this device', (tester) async {
         when(
-          () => mockAuthRepo.login(any()),
+          () => mockAuthRepo.login(
+            any(),
+            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+          ),
         ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
 
         await tester.pumpWidget(buildLoginScreenRouter());
@@ -508,7 +553,12 @@ void main() {
         await tester.tap(find.text('Sign In and Register'));
         await tester.pumpAndSettle();
 
-        verify(() => mockAuthRepo.login('nsec1dummykey')).called(1);
+        verify(
+          () => mockAuthRepo.login(
+            'nsec1dummykey',
+            devicePrivkeyHex: testPrivkeyHex,
+          ),
+        ).called(1);
         verify(
           () => mockLoginDeviceRegistrationService.publishDeviceList(
             ownerPubkeyHex: testPubkeyHex,

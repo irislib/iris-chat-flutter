@@ -94,16 +94,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Login with an existing private key in `nsec` format.
-  Future<void> login(String privateKeyNsec) async {
+  Future<void> login(String privateKeyNsec, {String? devicePrivkeyHex}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final identity = await _repository.login(privateKeyNsec);
+      final identity = await _repository.login(
+        privateKeyNsec,
+        devicePrivkeyHex: devicePrivkeyHex,
+      );
+      final devicePubkeyHex = await _repository.getDevicePubkeyHex();
       state = state.copyWith(
         isAuthenticated: true,
         isLoading: false,
         pubkeyHex: identity.pubkeyHex,
-        devicePubkeyHex: identity.pubkeyHex,
-        isLinkedDevice: false,
+        devicePubkeyHex: devicePubkeyHex,
+        isLinkedDevice:
+            devicePubkeyHex != null && devicePubkeyHex != identity.pubkeyHex,
         isInitialized: true,
       );
     } on InvalidKeyException catch (e) {

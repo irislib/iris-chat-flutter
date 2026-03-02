@@ -37,7 +37,7 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<Identity> login(String privkeyHex) {
+  Future<Identity> login(String privkeyHex, {String? devicePrivkeyHex}) {
     throw UnimplementedError();
   }
 
