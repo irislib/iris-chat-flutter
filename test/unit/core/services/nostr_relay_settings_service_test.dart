@@ -21,6 +21,34 @@ void main() {
       },
     );
 
+    test(
+      'load migrates legacy default relay set to current defaults',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          'settings.nostr_relay_urls': <String>[
+            'wss://relay.damus.io',
+            'wss://relay.snort.social',
+            'wss://temp.iris.to',
+            'wss://offchain.pub',
+            'wss://relay.primal.net',
+          ],
+        });
+        final service = NostrRelaySettingsServiceImpl(
+          preferencesFactory: SharedPreferences.getInstance,
+        );
+
+        final snapshot = await service.load();
+
+        expect(snapshot.relayUrls, NostrService.defaultRelays);
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          prefs.getStringList('settings.nostr_relay_urls'),
+          NostrService.defaultRelays,
+        );
+      },
+    );
+
     test('addRelay persists normalized relay url', () async {
       SharedPreferences.setMockInitialValues({
         'settings.nostr_relay_urls': <String>['wss://relay.damus.io'],

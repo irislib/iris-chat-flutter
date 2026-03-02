@@ -65,6 +65,13 @@ class NostrRelaySettingsServiceImpl implements NostrRelaySettingsService {
            preferencesFactory ?? SharedPreferences.getInstance;
 
   static const relayUrlsKey = 'settings.nostr_relay_urls';
+  static const _legacyDefaultRelaysV1 = <String>[
+    'wss://relay.damus.io',
+    'wss://relay.snort.social',
+    'wss://temp.iris.to',
+    'wss://offchain.pub',
+    'wss://relay.primal.net',
+  ];
 
   final Future<SharedPreferences> Function() _preferencesFactory;
 
@@ -73,10 +80,10 @@ class NostrRelaySettingsServiceImpl implements NostrRelaySettingsService {
     final prefs = await _preferencesFactory();
     final stored = prefs.getStringList(relayUrlsKey);
     final normalized = _normalizeRelayUrls(stored ?? const <String>[]);
-
-    final relayUrls = normalized.isNotEmpty
-        ? normalized
-        : List<String>.from(NostrService.defaultRelays);
+    final relayUrls = _resolveLoadedRelays(
+      normalized,
+      hadStoredSettings: stored != null,
+    );
 
     if (stored == null || !_listsEqual(stored, relayUrls)) {
       await prefs.setStringList(relayUrlsKey, relayUrls);
@@ -85,6 +92,22 @@ class NostrRelaySettingsServiceImpl implements NostrRelaySettingsService {
     return NostrRelaySettingsSnapshot(
       relayUrls: List<String>.unmodifiable(relayUrls),
     );
+  }
+
+  List<String> _resolveLoadedRelays(
+    List<String> normalized, {
+    required bool hadStoredSettings,
+  }) {
+    if (!hadStoredSettings || normalized.isEmpty) {
+      return List<String>.from(NostrService.defaultRelays);
+    }
+
+    // Migrate users who still have the original built-in relay set.
+    if (_listsEqual(normalized, _legacyDefaultRelaysV1)) {
+      return List<String>.from(NostrService.defaultRelays);
+    }
+
+    return normalized;
   }
 
   @override

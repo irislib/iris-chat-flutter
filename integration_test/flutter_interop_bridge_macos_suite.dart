@@ -62,7 +62,7 @@ SecureStorageService _createInMemorySecureStorage() {
 }
 
 ProviderContainer _makeContainer({
-  required String relayUrl,
+  required List<String> relayUrls,
   required String dbPath,
   required String ndrPath,
   required SecureStorageService secureStorage,
@@ -74,7 +74,7 @@ ProviderContainer _makeContainer({
         DatabaseService(dbPath: dbPath),
       ),
       nostrServiceProvider.overrideWith((ref) {
-        final service = NostrService(relayUrls: [relayUrl]);
+        final service = NostrService(relayUrls: relayUrls);
         ref.onDispose(() {
           unawaited(service.dispose());
         });
@@ -442,6 +442,41 @@ Future<void> _handleCommand({
           Duration(milliseconds: timeoutMs),
         );
 
+      case 'get_connection_status':
+        final nostrService = container.read(nostrServiceProvider);
+        await ok({
+          'connectedCount': nostrService.connectedCount,
+          'connectionStatus': nostrService.connectionStatus,
+        });
+        return;
+
+      case 'wait_for_connected_relays':
+        final minConnectedRaw = payload['minConnected'];
+        final minConnected = minConnectedRaw is num
+            ? minConnectedRaw.toInt()
+            : 1;
+        final timeoutMsRaw = payload['timeoutMs'];
+        final timeoutMs = timeoutMsRaw is num ? timeoutMsRaw.toInt() : 30000;
+        final end = DateTime.now().add(Duration(milliseconds: timeoutMs));
+        final nostrService = container.read(nostrServiceProvider);
+
+        while (DateTime.now().isBefore(end)) {
+          final connectedCount = nostrService.connectedCount;
+          if (connectedCount >= minConnected) {
+            await ok({
+              'connectedCount': connectedCount,
+              'connectionStatus': nostrService.connectionStatus,
+            });
+            return;
+          }
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+
+        throw TimeoutException(
+          'Timed out waiting for connected relays >= $minConnected',
+          Duration(milliseconds: timeoutMs),
+        );
+
       case 'send_message':
         final sessionId = payload['sessionId']?.toString() ?? '';
         final text = payload['text']?.toString() ?? '';
@@ -757,12 +792,27 @@ void main() {
     }
 
     const relayUrl = String.fromEnvironment('IRIS_INTEROP_RELAY_URL');
+    const relayUrlsRaw = String.fromEnvironment('IRIS_INTEROP_RELAY_URLS');
     const bridgeDirPath = String.fromEnvironment('IRIS_INTEROP_BRIDGE_DIR');
+    const dataDirPath = String.fromEnvironment('IRIS_INTEROP_DATA_DIR');
     const privateKeyNsec = String.fromEnvironment(
       'IRIS_INTEROP_PRIVATE_KEY_NSEC',
     );
 
-    expect(relayUrl, isNotEmpty, reason: 'IRIS_INTEROP_RELAY_URL is required');
+    final relayUrls = relayUrlsRaw
+        .split(',')
+        .map((v) => v.trim())
+        .where((v) => v.isNotEmpty)
+        .toList(growable: false);
+    final effectiveRelayUrls = relayUrls.isNotEmpty
+        ? relayUrls
+        : (relayUrl.isNotEmpty ? <String>[relayUrl] : const <String>[]);
+
+    expect(
+      effectiveRelayUrls,
+      isNotEmpty,
+      reason: 'IRIS_INTEROP_RELAY_URL or IRIS_INTEROP_RELAY_URLS is required',
+    );
     expect(
       bridgeDirPath,
       isNotEmpty,
@@ -778,11 +828,14 @@ void main() {
     await commandsFile.create(recursive: true);
     await eventsFile.writeAsString('', flush: true);
 
-    final rootDir = await Directory.systemTemp.createTemp('iris-chat-interop-');
+    final hasDataDirOverride = dataDirPath.trim().isNotEmpty;
+    final rootDir = hasDataDirOverride
+        ? await Directory(dataDirPath).create(recursive: true)
+        : await Directory.systemTemp.createTemp('iris-chat-interop-');
     final secureStorage = _createInMemorySecureStorage();
 
     final container = _makeContainer(
-      relayUrl: relayUrl,
+      relayUrls: effectiveRelayUrls,
       dbPath: '${rootDir.path}/db.sqlite',
       ndrPath: '${rootDir.path}/ndr',
       secureStorage: secureStorage,
@@ -815,7 +868,11 @@ void main() {
       final pubkeyHex = container.read(authStateProvider).pubkeyHex;
       await _emitEvent(eventsFile, {
         'type': 'ready',
-        'data': {'pubkeyHex': pubkeyHex, 'relayUrl': relayUrl},
+        'data': {
+          'pubkeyHex': pubkeyHex,
+          'relayUrl': effectiveRelayUrls.first,
+          'relayUrls': effectiveRelayUrls,
+        },
       });
 
       await _runBridgeLoop(
@@ -835,9 +892,11 @@ void main() {
       } catch (_) {}
       container.dispose();
 
-      try {
-        await rootDir.delete(recursive: true);
-      } catch (_) {}
+      if (!hasDataDirOverride) {
+        try {
+          await rootDir.delete(recursive: true);
+        } catch (_) {}
+      }
     }
   }, timeout: const Timeout(Duration(minutes: 20)));
 }

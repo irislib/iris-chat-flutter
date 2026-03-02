@@ -150,9 +150,9 @@ void main() {
 
     group('NostrService instance', () {
       test(
-        'default relays exclude nos.lol and include temp/offchain relays',
+        'default relays include nos.lol and include temp/offchain relays',
         () {
-          expect(NostrService.defaultRelays.contains('wss://nos.lol'), isFalse);
+          expect(NostrService.defaultRelays.contains('wss://nos.lol'), isTrue);
           expect(
             NostrService.defaultRelays.contains('wss://temp.iris.to'),
             isTrue,
