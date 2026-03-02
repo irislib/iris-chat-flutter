@@ -72,8 +72,15 @@ List<String> getTagValues(List<List<String>> tags, String name) {
 int? getExpirationTimestampSeconds(List<List<String>> tags) {
   final raw = getFirstTagValue(tags, 'expiration');
   if (raw == null || raw.isEmpty) return null;
-  final v = int.tryParse(raw);
-  if (v == null || v <= 0) return null;
+  final parsed = int.tryParse(raw);
+  if (parsed == null || parsed <= 0) return null;
+  var v = parsed;
+
+  // Accept clients that accidentally send millisecond or microsecond unix time.
+  while (v > 9999999999) {
+    v ~/= 1000;
+  }
+  if (v <= 0) return null;
   return v;
 }
 

@@ -69,6 +69,24 @@ void main() {
     expect(getExpirationTimestampSeconds(rumor.tags), 1704067260);
   });
 
+  test(
+    'getExpirationTimestampSeconds normalizes millisecond expiration tag',
+    () {
+      final rumor = NostrRumor.fromJsonMap({
+        'id': 'abc',
+        'pubkey': 'peer',
+        'created_at': 1,
+        'kind': 14,
+        'content': 'hi',
+        'tags': [
+          ['expiration', '1704067260123'],
+        ],
+      });
+
+      expect(getExpirationTimestampSeconds(rumor.tags), 1704067260);
+    },
+  );
+
   test('getExpirationTimestampSeconds returns null for invalid values', () {
     expect(getExpirationTimestampSeconds(const []), isNull);
     expect(

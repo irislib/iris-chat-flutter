@@ -1065,25 +1065,17 @@ class GroupNotifier extends StateNotifier<GroupState> {
     DateTime? reactionTimestamp,
   }) async {
     final current = state.messages[groupId] ?? const <ChatMessage>[];
-    var idx = current.indexWhere((m) => m.id == messageId);
-    if (idx == -1) {
-      idx = current.indexWhere((m) => m.rumorId == messageId);
-    }
-    if (idx == -1) return;
-
-    final message = current[idx];
-    final reactions = <String, List<String>>{};
-
-    for (final entry in message.reactions.entries) {
-      final filtered = entry.value.where((u) => u != pubkeyHex).toList();
-      if (filtered.isNotEmpty) reactions[entry.key] = filtered;
-    }
-    reactions[emoji] = [...(reactions[emoji] ?? []), pubkeyHex];
-
-    final updatedMessage = message.copyWith(reactions: reactions);
-    final next = [...current];
-    next[idx] = updatedMessage;
-    state = state.copyWith(messages: {...state.messages, groupId: next});
+    final applied = applyReactionToMessages(
+      current,
+      messageId: messageId,
+      emoji: emoji,
+      actorPubkeyHex: pubkeyHex,
+    );
+    if (applied == null) return;
+    final updatedMessage = applied.updatedMessage;
+    state = state.copyWith(
+      messages: {...state.messages, groupId: applied.updatedMessages},
+    );
 
     final myPubkeyHex = _myPubkeyHex();
     final shouldNotify =

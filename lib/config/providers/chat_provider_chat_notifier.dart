@@ -1086,37 +1086,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
     DateTime? reactionTimestamp,
   }) async {
     final currentMessages = state.messages[sessionId] ?? [];
-    // Match by internal id first, then by eventId
-    var messageIndex = currentMessages.indexWhere((m) => m.id == messageId);
-    if (messageIndex == -1) {
-      messageIndex = currentMessages.indexWhere((m) => m.eventId == messageId);
-    }
-    if (messageIndex == -1) {
-      messageIndex = currentMessages.indexWhere((m) => m.rumorId == messageId);
-    }
-    if (messageIndex == -1) return;
-
-    final message = currentMessages[messageIndex];
-
-    // Create updated reactions - remove user from any existing reactions first
-    final reactions = <String, List<String>>{};
-    for (final entry in message.reactions.entries) {
-      final filtered = entry.value.where((u) => u != pubkey).toList();
-      if (filtered.isNotEmpty) {
-        reactions[entry.key] = filtered;
-      }
-    }
-
-    // Add user to new reaction
-    reactions[emoji] = [...(reactions[emoji] ?? []), pubkey];
-
-    // Update message
-    final updatedMessage = message.copyWith(reactions: reactions);
-    final updatedMessages = [...currentMessages];
-    updatedMessages[messageIndex] = updatedMessage;
+    final applied = applyReactionToMessages(
+      currentMessages,
+      messageId: messageId,
+      emoji: emoji,
+      actorPubkeyHex: pubkey,
+      matchEventId: true,
+    );
+    if (applied == null) return;
+    final updatedMessage = applied.updatedMessage;
 
     state = state.copyWith(
-      messages: {...state.messages, sessionId: updatedMessages},
+      messages: {...state.messages, sessionId: applied.updatedMessages},
     );
 
     final ownerPubkey = _sessionManagerService.ownerPubkeyHex;
