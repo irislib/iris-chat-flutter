@@ -928,13 +928,12 @@ class GroupNotifier extends StateNotifier<GroupState> {
     // Persist first to avoid duplicates across UI rebuilds.
     if (await _groupMessageDatasource.messageExists(rumor.id)) return;
 
-    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final expiresAtSeconds = getExpirationTimestampSeconds(rumor.tags);
-    if (expiresAtSeconds != null && expiresAtSeconds <= nowSeconds) {
+    if (isExpirationElapsed(expiresAtSeconds)) {
       return;
     }
 
-    final replyToId = _resolveReplyToId(rumor.tags);
+    final replyToId = resolveReplyToId(rumor.tags);
 
     final message = ChatMessage(
       id: rumor.id,
@@ -1257,16 +1256,6 @@ class GroupNotifier extends StateNotifier<GroupState> {
     }).toList();
 
     state = state.copyWith(groups: nextGroups);
-  }
-
-  static String? _resolveReplyToId(List<List<String>> tags) {
-    for (final t in tags) {
-      if (t.length < 2) continue;
-      if (t[0] != 'e') continue;
-      if (t.length >= 4 && t[3] == 'reply') return t[1];
-    }
-    // Fallback: first e tag.
-    return getFirstTagValue(tags, 'e');
   }
 
   static Map<String, dynamic> _rumorToMap(NostrRumor rumor) {

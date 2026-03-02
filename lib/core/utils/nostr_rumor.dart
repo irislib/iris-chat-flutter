@@ -77,6 +77,21 @@ int? getExpirationTimestampSeconds(List<List<String>> tags) {
   return v;
 }
 
+bool isExpirationElapsed(int? expiresAtSeconds, {DateTime? now}) {
+  if (expiresAtSeconds == null) return false;
+  final nowSeconds = (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
+  return expiresAtSeconds <= nowSeconds;
+}
+
+String? resolveReplyToId(List<List<String>> tags) {
+  for (final t in tags) {
+    if (t.length < 2) continue;
+    if (t[0] != 'e') continue;
+    if (t.length >= 4 && t[3] == 'reply') return t[1];
+  }
+  return getFirstTagValue(tags, 'e');
+}
+
 int? getMillisecondTimestamp(List<List<String>> tags) {
   final ms = getFirstTagValue(tags, 'ms');
   if (ms == null) return null;

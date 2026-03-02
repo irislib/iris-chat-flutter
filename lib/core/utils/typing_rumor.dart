@@ -24,9 +24,7 @@ bool isTypingStopRumor(
   final expiration =
       expiresAtSeconds ?? getExpirationTimestampSeconds(rumor.tags);
   if (expiration == null) return false;
-
-  final nowSeconds = (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
-  if (expiration <= nowSeconds) return true;
+  if (isExpirationElapsed(expiration, now: now)) return true;
 
   // Stop rumors are emitted with expiration ~= created_at; allow for skew.
   return expiration <= rumor.createdAt + kTypingStopExpirationLeewaySeconds;

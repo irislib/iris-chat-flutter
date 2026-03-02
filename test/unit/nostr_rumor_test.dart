@@ -90,4 +90,29 @@ void main() {
       isNull,
     );
   });
+
+  test('isExpirationElapsed checks unix seconds against now', () {
+    final now = DateTime.fromMillisecondsSinceEpoch(1700000005000);
+    expect(isExpirationElapsed(null, now: now), isFalse);
+    expect(isExpirationElapsed(1700000005, now: now), isTrue);
+    expect(isExpirationElapsed(1700000006, now: now), isFalse);
+  });
+
+  test('resolveReplyToId prefers e tag marked as reply', () {
+    final id = resolveReplyToId([
+      ['e', 'root-id', '', 'root'],
+      ['e', 'reply-id', '', 'reply'],
+      ['e', 'fallback-id'],
+    ]);
+    expect(id, 'reply-id');
+  });
+
+  test('resolveReplyToId falls back to first e tag', () {
+    final id = resolveReplyToId([
+      ['p', 'peer'],
+      ['e', 'first-id'],
+      ['e', 'second-id'],
+    ]);
+    expect(id, 'first-id');
+  });
 }

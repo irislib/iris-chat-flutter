@@ -525,9 +525,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
         return null;
       }
 
-      final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final expiresAtSeconds = getExpirationTimestampSeconds(rumor.tags);
-      if (expiresAtSeconds != null && expiresAtSeconds <= nowSeconds) {
+      if (isExpirationElapsed(expiresAtSeconds)) {
         // Ignore already-expired messages; they may still be delivered by relays,
         // but clients should not surface them.
         return null;
@@ -545,7 +544,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         status: isMine ? MessageStatus.sent : MessageStatus.delivered,
         eventId: eventId,
         rumorId: rumor.id,
-        replyToId: _resolveReplyToId(rumor.tags),
+        replyToId: resolveReplyToId(rumor.tags),
       );
 
       if (!isMine) {
@@ -624,15 +623,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
 
     return null;
-  }
-
-  static String? _resolveReplyToId(List<List<String>> tags) {
-    for (final t in tags) {
-      if (t.length < 2) continue;
-      if (t[0] != 'e') continue;
-      if (t.length >= 4 && t[3] == 'reply') return t[1];
-    }
-    return getFirstTagValue(tags, 'e');
   }
 
   Future<void> markSessionSeen(String sessionId) async {
