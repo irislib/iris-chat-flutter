@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iris_chat/config/providers/invite_provider.dart';
@@ -12,6 +13,8 @@ class MockInviteLocalDatasource extends Mock implements InviteLocalDatasource {}
 class MockRef extends Mock implements Ref {}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late InviteNotifier notifier;
   late MockInviteLocalDatasource mockDatasource;
   late MockRef mockRef;
@@ -195,6 +198,54 @@ void main() {
         notifier.clearError();
 
         expect(notifier.state.error, isNull);
+      });
+    });
+
+    group('getInviteUrl defaults', () {
+      test('uses chat.iris.to root when root is not provided', () async {
+        const channel = MethodChannel('to.iris.chat/ndr_ffi');
+        final calls = <MethodCall>[];
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call);
+              switch (call.method) {
+                case 'inviteDeserialize':
+                  return <String, dynamic>{'id': 'mock-invite-handle'};
+                case 'inviteToUrl':
+                  final args = Map<String, dynamic>.from(call.arguments as Map);
+                  return '${args['root']}/invite/invite-123';
+                case 'inviteDispose':
+                  return null;
+              }
+              return null;
+            });
+
+        when(() => mockDatasource.getInvite('invite-123')).thenAnswer(
+          (_) async => Invite(
+            id: 'invite-123',
+            inviterPubkeyHex: 'pubkey1',
+            createdAt: DateTime(2026, 1, 1),
+            serializedState: 'serialized-state',
+          ),
+        );
+
+        try {
+          final result = await notifier.getInviteUrl('invite-123');
+
+          expect(result, 'https://chat.iris.to/invite/invite-123');
+          final inviteToUrlCalls = calls
+              .where((c) => c.method == 'inviteToUrl')
+              .toList();
+          expect(inviteToUrlCalls, hasLength(1));
+          final inviteToUrlArgs = Map<String, dynamic>.from(
+            inviteToUrlCalls.first.arguments as Map,
+          );
+          expect(inviteToUrlArgs['root'], 'https://chat.iris.to');
+        } finally {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null);
+        }
       });
     });
   });

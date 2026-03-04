@@ -330,7 +330,7 @@ class InviteNotifier extends StateNotifier<InviteState> {
   /// Get the URL for an invite.
   Future<String?> getInviteUrl(
     String inviteId, {
-    String root = 'https://iris.to',
+    String root = 'https://chat.iris.to',
   }) async {
     InviteHandle? inviteHandle;
     Invite? invite;

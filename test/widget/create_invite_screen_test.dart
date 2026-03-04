@@ -49,7 +49,7 @@ class TestInviteNotifier extends InviteNotifier {
   @override
   Future<String?> getInviteUrl(
     String inviteId, {
-    String root = 'https://iris.to',
+    String root = 'https://chat.iris.to',
   }) {
     return Future.value('$root/invite/$inviteId');
   }
