@@ -147,16 +147,20 @@ class SettingsScreen extends ConsumerWidget {
             ),
             onTap: canManageDevices ? () => context.push('/invite/scan') : null,
           ),
-          if (canManageDevices && !deviceState.isCurrentDeviceRegistered)
+          if (!deviceState.isCurrentDeviceRegistered)
             ListTile(
               leading: const Icon(Icons.app_registration),
               title: const Text('Register This Device'),
-              subtitle: const Text(
-                'Add this device to your encrypted messaging devices',
+              subtitle: Text(
+                canManageDevices
+                    ? 'Add this device to your encrypted messaging devices'
+                    : 'If you skipped registration at sign-in, sign out and use "Sign In and Register".',
               ),
               onTap: deviceState.isUpdating
                   ? null
-                  : () => _registerCurrentDevice(context, ref),
+                  : canManageDevices
+                  ? () => _registerCurrentDevice(context, ref)
+                  : () => _showRegisterCurrentDeviceHelpDialog(context),
             ),
           if (authState.isLinkedDevice)
             ListTile(
@@ -238,8 +242,16 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             key: const ValueKey('settings_export_private_key'),
             leading: const Icon(Icons.key),
-            title: const Text('Export Private Key'),
-            subtitle: const Text('Backup your key securely'),
+            title: Text(
+              authState.isLinkedDevice
+                  ? 'Export Device Key'
+                  : 'Export Private Key',
+            ),
+            subtitle: Text(
+              authState.isLinkedDevice
+                  ? 'Copy the key stored on this device'
+                  : 'Backup your key securely',
+            ),
             onTap: () => _showExportKeyDialog(context, ref),
           ),
 
@@ -571,33 +583,19 @@ class SettingsScreen extends ConsumerWidget {
 
   Future<void> _showExportKeyDialog(BuildContext context, WidgetRef ref) async {
     final authState = ref.read(authStateProvider);
-    if (authState.isLinkedDevice) {
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Export Private Key'),
-          content: const Text(
-            'This device does not store your main private key.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
+    final dialogTitle = authState.isLinkedDevice
+        ? 'Export Device Key'
+        : 'Export Private Key';
+    final dialogContent = authState.isLinkedDevice
+        ? 'This device stores its own device key, not your main nsec. Copy the device key from this device?'
+        : 'Your private key gives full access to your identity. Never share it with anyone. Make sure to store it securely.';
+    final copyLabel = authState.isLinkedDevice ? 'Copy Device Key' : 'Copy';
 
     final shouldCopy = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Export Private Key'),
-        content: const Text(
-          'Your private key gives full access to your identity. '
-          'Never share it with anyone. Make sure to store it securely.',
-        ),
+        title: Text(dialogTitle),
+        content: Text(dialogContent),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -605,7 +603,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Copy'),
+            child: Text(copyLabel),
           ),
         ],
       ),
@@ -674,16 +672,16 @@ class SettingsScreen extends ConsumerWidget {
       return 'Scan a link invite from the new device';
     }
     if (isCurrentDeviceRegistered) {
-      return 'Only a device with your main private key can link new devices';
+      return 'Only a session with your main nsec can link more devices';
     }
-    return 'This device cannot link new devices until it is registered';
+    return 'Register this device first. If you skipped it at sign-in, use Register This Device below.';
   }
 
   String _deviceAccessSubtitle({required bool isCurrentDeviceRegistered}) {
     if (isCurrentDeviceRegistered) {
-      return 'Read-only on this device. Use your main private key to add or remove devices.';
+      return 'Read-only on this device. Use a session with your main nsec to add or remove devices.';
     }
-    return 'Signed in as your identity on this device. This device list is read-only until it is registered.';
+    return 'This device is not registered yet. Use the Register This Device button below to finish setup.';
   }
 
   String _ellipsizeMiddle(String value, {int head = 22, int tail = 16}) {
@@ -778,7 +776,7 @@ class SettingsScreen extends ConsumerWidget {
         builder: (dialogContext) => AlertDialog(
           title: const Text('Profile Editing'),
           content: const Text(
-            'This device does not store your main private key, so it cannot publish profile metadata for the owner key.',
+            'This device does not store your main nsec, so it cannot publish profile metadata for the owner key.',
           ),
           actions: [
             TextButton(
@@ -965,6 +963,24 @@ class SettingsScreen extends ConsumerWidget {
     final error = ref.read(deviceManagerProvider).error;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(error ?? 'Failed to register device')),
+    );
+  }
+
+  Future<void> _showRegisterCurrentDeviceHelpDialog(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Register This Device'),
+        content: const Text(
+          'This session only kept a device key. To register it, sign out, sign in again with your main nsec, then choose "Sign In and Register".',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
 

@@ -649,6 +649,32 @@ void main() {
         expect(find.byIcon(Icons.key), findsOneWidget);
       });
 
+      testWidgets('shows Export Device Key option for device-key sessions', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            isLinkedDevice: true,
+            devicePubkeyHex: '1111',
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final exportTile = find.byKey(
+          const ValueKey('settings_export_private_key'),
+        );
+        await tester.dragUntilVisible(
+          exportTile,
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Export Device Key'), findsOneWidget);
+        expect(find.text('Copy the key stored on this device'), findsOneWidget);
+      });
+
       testWidgets('shows export key confirmation dialog when tapped', (
         tester,
       ) async {
@@ -773,7 +799,7 @@ void main() {
         expect(find.text('Device Access'), findsOneWidget);
         expect(
           find.text(
-            'Read-only on this device. Use your main private key to add or remove devices.',
+            'Read-only on this device. Use a session with your main nsec to add or remove devices.',
           ),
           findsOneWidget,
         );
@@ -807,22 +833,57 @@ void main() {
 
           expect(
             find.text(
-              'Signed in as your identity on this device. This device list is read-only until it is registered.',
+              'This device is not registered yet. Use the Register This Device button below to finish setup.',
             ),
             findsOneWidget,
           );
           expect(
             find.text(
-              'This device cannot link new devices until it is registered',
+              'Register this device first. If you skipped it at sign-in, use Register This Device below.',
             ),
             findsOneWidget,
           );
+          expect(find.text('Register This Device'), findsOneWidget);
           expect(
             find.text('Manage registered devices on your main client'),
             findsNothing,
           );
         },
       );
+
+      testWidgets('unregistered device-key sessions show register help dialog', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            isLinkedDevice: true,
+            devicePubkeyHex: '1111',
+            deviceManagerState: const DeviceManagerState(
+              isLoading: false,
+              currentDevicePubkeyHex: '1111',
+              devices: [
+                FfiDeviceEntry(
+                  identityPubkeyHex: '2222',
+                  createdAt: 1700000000,
+                ),
+              ],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Register This Device'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Register This Device'), findsAtLeastNWidgets(1));
+        expect(
+          find.text(
+            'This session only kept a device key. To register it, sign out, sign in again with your main nsec, then choose "Sign In and Register".',
+          ),
+          findsOneWidget,
+        );
+      });
 
       testWidgets(
         'shows register button when current device is not registered',
