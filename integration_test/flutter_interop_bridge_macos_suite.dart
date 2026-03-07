@@ -339,6 +339,29 @@ Future<bool> _waitForGroup(
   return false;
 }
 
+Future<String?> _waitForGroupNamed(
+  ProviderContainer container, {
+  required String name,
+  required Duration timeout,
+}) async {
+  final trimmed = name.trim();
+  if (trimmed.isEmpty) return null;
+
+  final end = DateTime.now().add(timeout);
+
+  while (DateTime.now().isBefore(end)) {
+    final groups = container.read(groupStateProvider).groups;
+    for (final group in groups) {
+      if (group.name == trimmed) {
+        return group.id;
+      }
+    }
+    await Future.delayed(const Duration(milliseconds: 80));
+  }
+
+  return null;
+}
+
 Future<bool> _waitForGroupMessageText(
   ProviderContainer container, {
   required String groupId,
@@ -967,6 +990,28 @@ Future<void> _handleCommand({
           );
         }
         await ok({'groupId': groupId});
+        return;
+
+      case 'wait_for_group_named':
+        final name = payload['name']?.toString() ?? '';
+        if (name.trim().isEmpty) {
+          throw ArgumentError('wait_for_group_named requires name');
+        }
+
+        final timeoutMsRaw = payload['timeoutMs'];
+        final timeoutMs = timeoutMsRaw is num ? timeoutMsRaw.toInt() : 30000;
+        final matchedGroupId = await _waitForGroupNamed(
+          container,
+          name: name,
+          timeout: Duration(milliseconds: timeoutMs),
+        );
+        if (matchedGroupId == null || matchedGroupId.isEmpty) {
+          throw TimeoutException(
+            'Timed out waiting for group name',
+            Duration(milliseconds: timeoutMs),
+          );
+        }
+        await ok({'groupId': matchedGroupId, 'name': name});
         return;
 
       case 'accept_group':
