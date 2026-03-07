@@ -139,11 +139,7 @@ class SettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.devices),
             title: const Text('Link a Device'),
             subtitle: Text(
-              _deviceLinkSubtitle(
-                isLinkedDevice: authState.isLinkedDevice,
-                isCurrentDeviceRegistered:
-                    deviceState.isCurrentDeviceRegistered,
-              ),
+              _deviceLinkSubtitle(isLinkedDevice: authState.isLinkedDevice),
             ),
             onTap: canManageDevices ? () => context.push('/invite/scan') : null,
           ),
@@ -154,7 +150,7 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: Text(
                 canManageDevices
                     ? 'Add this device to your encrypted messaging devices'
-                    : 'If you skipped registration at sign-in, sign out and use "Sign In and Register".',
+                    : 'Linked-device sessions cannot update the device list. Sign in here with your main nsec if you want to register this device.',
               ),
               onTap: deviceState.isUpdating
                   ? null
@@ -539,7 +535,7 @@ class SettingsScreen extends ConsumerWidget {
           const ListTile(
             leading: Icon(Icons.info),
             title: Text('Version'),
-            subtitle: Text('2.6.1'),
+            subtitle: Text('2.6.2'),
           ),
           ListTile(
             leading: const Icon(Icons.code),
@@ -664,24 +660,18 @@ class SettingsScreen extends ConsumerWidget {
     return 'No profile metadata published';
   }
 
-  String _deviceLinkSubtitle({
-    required bool isLinkedDevice,
-    required bool isCurrentDeviceRegistered,
-  }) {
+  String _deviceLinkSubtitle({required bool isLinkedDevice}) {
     if (!isLinkedDevice) {
       return 'Scan a link invite from the new device';
     }
-    if (isCurrentDeviceRegistered) {
-      return 'Only a session with your main nsec can link more devices';
-    }
-    return 'Register this device first. If you skipped it at sign-in, use Register This Device below.';
+    return 'Only a session with your main nsec can link more devices';
   }
 
   String _deviceAccessSubtitle({required bool isCurrentDeviceRegistered}) {
     if (isCurrentDeviceRegistered) {
       return 'Read-only on this device. Use a session with your main nsec to add or remove devices.';
     }
-    return 'This device is not registered yet. Use the Register This Device button below to finish setup.';
+    return 'This linked-device session is read-only and is not registered. Sign in here with your main nsec if you want to register this device.';
   }
 
   String _ellipsizeMiddle(String value, {int head = 22, int tail = 16}) {
@@ -972,7 +962,7 @@ class SettingsScreen extends ConsumerWidget {
       builder: (context) => AlertDialog(
         title: const Text('Register This Device'),
         content: const Text(
-          'This session only kept a device key. To register it, sign out, sign in again with your main nsec, then choose "Sign In and Register".',
+          'This linked-device session cannot update the device list. Sign out here and sign in again with your main nsec if you want this device to become your owner session.',
         ),
         actions: [
           TextButton(

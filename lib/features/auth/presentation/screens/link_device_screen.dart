@@ -291,7 +291,7 @@ class _LinkDeviceScreenState extends ConsumerState<LinkDeviceScreen> {
                         const SizedBox(width: 12),
                         const Expanded(
                           child: Text(
-                            'This device will not store your main private key.',
+                            'This device will not store your main nsec.',
                           ),
                         ),
                       ],

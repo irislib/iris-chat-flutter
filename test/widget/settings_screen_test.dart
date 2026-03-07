@@ -809,8 +809,51 @@ void main() {
         expect(find.text('Register This Device'), findsNothing);
       });
 
+      testWidgets('shows unregistered linked-device copy', (tester) async {
+        await tester.pumpWidget(
+          buildSettingsScreen(
+            pubkeyHex: testPubkeyHex,
+            isLinkedDevice: true,
+            devicePubkeyHex: '1111',
+            deviceManagerState: const DeviceManagerState(
+              isLoading: false,
+              currentDevicePubkeyHex: '1111',
+              devices: [
+                FfiDeviceEntry(
+                  identityPubkeyHex: '2222',
+                  createdAt: 1700000000,
+                ),
+              ],
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'This linked-device session is read-only and is not registered. Sign in here with your main nsec if you want to register this device.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Only a session with your main nsec can link more devices'),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'Linked-device sessions cannot update the device list. Sign in here with your main nsec if you want to register this device.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Register This Device'), findsOneWidget);
+        expect(
+          find.text('Manage registered devices on your main client'),
+          findsNothing,
+        );
+      });
+
       testWidgets(
-        'shows unregistered imported-session copy instead of main-client copy',
+        'unregistered linked-device sessions show register help dialog',
         (tester) async {
           await tester.pumpWidget(
             buildSettingsScreen(
@@ -831,59 +874,18 @@ void main() {
           );
           await tester.pumpAndSettle();
 
+          await tester.tap(find.text('Register This Device'));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Register This Device'), findsAtLeastNWidgets(1));
           expect(
             find.text(
-              'This device is not registered yet. Use the Register This Device button below to finish setup.',
+              'This linked-device session cannot update the device list. Sign out here and sign in again with your main nsec if you want this device to become your owner session.',
             ),
             findsOneWidget,
-          );
-          expect(
-            find.text(
-              'Register this device first. If you skipped it at sign-in, use Register This Device below.',
-            ),
-            findsOneWidget,
-          );
-          expect(find.text('Register This Device'), findsOneWidget);
-          expect(
-            find.text('Manage registered devices on your main client'),
-            findsNothing,
           );
         },
       );
-
-      testWidgets('unregistered device-key sessions show register help dialog', (
-        tester,
-      ) async {
-        await tester.pumpWidget(
-          buildSettingsScreen(
-            pubkeyHex: testPubkeyHex,
-            isLinkedDevice: true,
-            devicePubkeyHex: '1111',
-            deviceManagerState: const DeviceManagerState(
-              isLoading: false,
-              currentDevicePubkeyHex: '1111',
-              devices: [
-                FfiDeviceEntry(
-                  identityPubkeyHex: '2222',
-                  createdAt: 1700000000,
-                ),
-              ],
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.text('Register This Device'));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Register This Device'), findsAtLeastNWidgets(1));
-        expect(
-          find.text(
-            'This session only kept a device key. To register it, sign out, sign in again with your main nsec, then choose "Sign In and Register".',
-          ),
-          findsOneWidget,
-        );
-      });
 
       testWidgets(
         'shows register button when current device is not registered',
@@ -981,7 +983,7 @@ void main() {
 
         await tester.scrollUntilVisible(find.text('Version'), 300);
         expect(find.text('Version'), findsOneWidget);
-        expect(find.text('2.6.1'), findsOneWidget);
+        expect(find.text('2.6.2'), findsOneWidget);
         expect(find.byIcon(Icons.info), findsOneWidget);
       });
 

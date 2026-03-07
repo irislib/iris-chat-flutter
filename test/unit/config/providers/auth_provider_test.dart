@@ -141,12 +141,14 @@ void main() {
 
     group('login', () {
       test(
-        'sets linked-device state when login stores a separate device key',
+        'sets linked-device state when login is given a separate device key',
         () async {
           const ownerPubkey =
               'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
           const devicePubkey =
               'c1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+          const devicePrivkey =
+              'd1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2';
 
           when(
             () => mockRepo.login(
@@ -158,7 +160,7 @@ void main() {
             () => mockRepo.getDevicePubkeyHex(),
           ).thenAnswer((_) async => devicePubkey);
 
-          await notifier.login('nsec1example');
+          await notifier.login('nsec1example', devicePrivkeyHex: devicePrivkey);
 
           expect(notifier.state.isAuthenticated, true);
           expect(notifier.state.pubkeyHex, ownerPubkey);

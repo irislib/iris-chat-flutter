@@ -18,11 +18,6 @@ void main() {
       'f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2';
   const ownerPubkeyHex =
       'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-  const generatedDevicePrivkeyHex =
-      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-  const generatedDevicePubkeyHex =
-      'b1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-
   setUpAll(() {
     registerFallbackValue(const NostrFilter());
   });
@@ -50,16 +45,6 @@ void main() {
             if (privkeyHex == ownerPrivkeyHex) {
               return ownerPubkeyHex;
             }
-            if (privkeyHex == generatedDevicePrivkeyHex) {
-              return generatedDevicePubkeyHex;
-            }
-          }
-
-          if (methodCall.method == 'generateKeypair') {
-            return {
-              'privateKeyHex': generatedDevicePrivkeyHex,
-              'publicKeyHex': generatedDevicePubkeyHex,
-            };
           }
 
           return null;
@@ -74,17 +59,17 @@ void main() {
         );
   });
 
-  test('preview marks generated device key as current device', () async {
+  test('preview treats direct nsec login as the owner device', () async {
     final preview = await service.buildPreviewFromPrivateKeyNsec(
       ownerPrivkeyNsec,
     );
 
     expect(preview.ownerPubkeyHex, ownerPubkeyHex);
-    expect(preview.currentDevicePubkeyHex, generatedDevicePubkeyHex);
-    expect(preview.currentDevicePubkeyHex, isNot(preview.ownerPubkeyHex));
+    expect(preview.currentDevicePrivkeyHex, ownerPrivkeyHex);
+    expect(preview.currentDevicePubkeyHex, ownerPubkeyHex);
     expect(
       preview.devicesIfRegistered.map((d) => d.identityPubkeyHex),
-      contains(generatedDevicePubkeyHex),
+      contains(ownerPubkeyHex),
     );
   });
 }

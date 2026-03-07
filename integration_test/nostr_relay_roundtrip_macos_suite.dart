@@ -231,6 +231,7 @@ void main() {
 
     final importedIdentity = await repo.login(privateKeyNsec);
     expect(importedIdentity.pubkeyHex, createdIdentity.pubkeyHex);
+    expect(await repo.getPrivateKey(), storedPrivkeyHex);
 
     await repo.logout();
     expect(

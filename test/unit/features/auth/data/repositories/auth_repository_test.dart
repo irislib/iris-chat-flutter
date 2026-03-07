@@ -158,32 +158,17 @@ void main() {
 
     group('login with valid key', () {
       test(
-        'stores a generated device key and keeps nsec pubkey as owner',
+        'stores owner key by default and keeps nsec pubkey as owner',
         () async {
-          const generatedDevicePrivkey =
-              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-          const generatedDevicePubkey =
-              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
-
-          // Mock the MethodChannel for ndr-ffi
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
               .setMockMethodCallHandler(
                 const MethodChannel('to.iris.chat/ndr_ffi'),
                 (MethodCall methodCall) async {
-                  if (methodCall.method == 'generateKeypair') {
-                    return {
-                      'publicKeyHex': generatedDevicePubkey,
-                      'privateKeyHex': generatedDevicePrivkey,
-                    };
-                  }
                   if (methodCall.method == 'derivePublicKey') {
                     final args = methodCall.arguments as Map<dynamic, dynamic>;
                     final privkeyHex = args['privkeyHex'] as String;
                     if (privkeyHex == testPrivkey) {
                       return testPubkey;
-                    }
-                    if (privkeyHex == generatedDevicePrivkey) {
-                      return generatedDevicePubkey;
                     }
                   }
                   return null;
@@ -202,7 +187,7 @@ void main() {
           expect(result.pubkeyHex, testPubkey);
           verify(
             () => mockStorage.saveIdentity(
-              privkeyHex: generatedDevicePrivkey,
+              privkeyHex: testPrivkey,
               pubkeyHex: testPubkey,
             ),
           ).called(1);

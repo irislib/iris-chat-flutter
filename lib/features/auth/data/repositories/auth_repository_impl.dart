@@ -37,24 +37,16 @@ class AuthRepositoryImpl implements AuthRepository {
     final ownerPrivkeyHex = _normalizePrivateKeyNsec(privateKeyNsec);
     final ownerPubkeyHex = await _derivePublicKey(ownerPrivkeyHex);
 
-    String normalizedDevicePrivkeyHex;
-    if (devicePrivkeyHex != null) {
-      normalizedDevicePrivkeyHex = devicePrivkeyHex.trim().toLowerCase();
-      if (!_isValidPrivateKey(normalizedDevicePrivkeyHex)) {
-        throw const InvalidKeyException(_invalidDevicePrivateKeyMessage);
-      }
-    } else {
-      final generated = await NdrFfi.generateKeypair();
-      normalizedDevicePrivkeyHex = generated.privateKeyHex.trim().toLowerCase();
-      if (!_isValidPrivateKey(normalizedDevicePrivkeyHex)) {
-        throw const InvalidKeyException(_invalidDevicePrivateKeyMessage);
-      }
+    final normalizedDevicePrivkeyHex =
+        devicePrivkeyHex?.trim().toLowerCase() ?? ownerPrivkeyHex;
+    if (!_isValidPrivateKey(normalizedDevicePrivkeyHex)) {
+      throw const InvalidKeyException(_invalidDevicePrivateKeyMessage);
     }
 
     // Validate that the selected device private key can derive a pubkey.
     await _derivePublicKey(normalizedDevicePrivkeyHex);
 
-    // Store device private key linked to owner identity pubkey.
+    // Store the session private key linked to the owner identity pubkey.
     await _storage.saveIdentity(
       privkeyHex: normalizedDevicePrivkeyHex,
       pubkeyHex: ownerPubkeyHex,
