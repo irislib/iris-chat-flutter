@@ -144,12 +144,14 @@ class InviteNotifier extends StateNotifier<InviteState> {
     final devicePrivkeyHex = await authRepo.getPrivateKey();
     if (devicePrivkeyHex == null || devicePrivkeyHex.isEmpty) return;
 
-    if (!authState.isLinkedDevice) {
+    if (authState.hasOwnerKey) {
       final ownerPubkeyHex = authState.pubkeyHex!;
       final devicePubkeyHex = await NdrFfi.derivePublicKey(devicePrivkeyHex);
+      final ownerPrivkeyHex = await authRepo.getOwnerPrivateKey();
+      if (ownerPrivkeyHex == null || ownerPrivkeyHex.isEmpty) return;
       await _publishMergedAppKeys(
         ownerPubkeyHex: ownerPubkeyHex,
-        ownerPrivkeyHex: devicePrivkeyHex,
+        ownerPrivkeyHex: ownerPrivkeyHex,
         devicePubkeysToEnsure: {devicePubkeyHex},
       );
     }
@@ -290,18 +292,22 @@ class InviteNotifier extends StateNotifier<InviteState> {
       if (!authState.isAuthenticated || authState.pubkeyHex == null) {
         throw Exception('Not authenticated');
       }
-      if (authState.isLinkedDevice) {
+      if (!authState.hasOwnerKey) {
         throw Exception('Linked devices cannot accept link invites');
       }
 
       final authRepo = _ref.read(authRepositoryProvider);
-      final ownerPrivkeyHex = await authRepo.getPrivateKey();
+      final ownerPrivkeyHex = await authRepo.getOwnerPrivateKey();
       if (ownerPrivkeyHex == null) {
         throw Exception('Private key not found');
       }
 
       final ownerPubkeyHex = authState.pubkeyHex!;
-      final devicePubkeyHex = await NdrFfi.derivePublicKey(ownerPrivkeyHex);
+      final devicePrivkeyHex = await authRepo.getPrivateKey();
+      if (devicePrivkeyHex == null) {
+        throw Exception('Device key not found');
+      }
+      final devicePubkeyHex = await NdrFfi.derivePublicKey(devicePrivkeyHex);
 
       final sessionManager = _ref.read(sessionManagerServiceProvider);
       final acceptResult = await sessionManager.acceptInviteFromUrl(

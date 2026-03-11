@@ -336,6 +336,7 @@ void main() {
     String? pubkeyHex,
     bool isAuthenticated = true,
     bool isLinkedDevice = false,
+    bool hasOwnerKey = true,
     String? devicePubkeyHex,
     FakeStartupLaunchService? startupService,
     FakeMessagingPreferencesService? messagingService,
@@ -369,6 +370,7 @@ void main() {
           pubkeyHex: pubkeyHex,
           devicePubkeyHex: devicePubkeyHex,
           isLinkedDevice: isLinkedDevice,
+          hasOwnerKey: hasOwnerKey,
           isInitialized: true,
         );
         return notifier;
@@ -520,7 +522,7 @@ void main() {
 
       testWidgets('publishes profile metadata on save', (tester) async {
         when(
-          () => mockAuthRepo.getPrivateKey(),
+          () => mockAuthRepo.getOwnerPrivateKey(),
         ).thenAnswer((_) async => testPrivkeyHex);
         when(
           () => mockNostrService.publishEvent(any()),
@@ -549,7 +551,7 @@ void main() {
       ) async {
         final publishCompleter = Completer<void>();
         when(
-          () => mockAuthRepo.getPrivateKey(),
+          () => mockAuthRepo.getOwnerPrivateKey(),
         ).thenAnswer((_) async => testPrivkeyHex);
         when(
           () => mockNostrService.publishEvent(any()),
@@ -808,6 +810,7 @@ void main() {
           buildSettingsScreen(
             pubkeyHex: testPubkeyHex,
             isLinkedDevice: true,
+            hasOwnerKey: false,
             devicePubkeyHex: '3333',
             deviceManagerState: const DeviceManagerState(
               isLoading: false,
@@ -845,6 +848,7 @@ void main() {
           buildSettingsScreen(
             pubkeyHex: testPubkeyHex,
             isLinkedDevice: true,
+            hasOwnerKey: false,
             devicePubkeyHex: '1111',
             deviceManagerState: const DeviceManagerState(
               isLoading: false,
@@ -890,6 +894,7 @@ void main() {
             buildSettingsScreen(
               pubkeyHex: testPubkeyHex,
               isLinkedDevice: true,
+              hasOwnerKey: false,
               devicePubkeyHex: '1111',
               deviceManagerState: const DeviceManagerState(
                 isLoading: false,
@@ -915,6 +920,46 @@ void main() {
             ),
             findsOneWidget,
           );
+        },
+      );
+
+      testWidgets(
+        'owner-capable device-key sessions can still manage devices',
+        (tester) async {
+          TestDeviceManagerNotifier? deviceNotifier;
+          await tester.pumpWidget(
+            buildSettingsScreen(
+              pubkeyHex: testPubkeyHex,
+              isLinkedDevice: true,
+              hasOwnerKey: true,
+              devicePubkeyHex: '1111',
+              deviceManagerState: const DeviceManagerState(
+                isLoading: false,
+                currentDevicePubkeyHex: '1111',
+                devices: [
+                  FfiDeviceEntry(
+                    identityPubkeyHex: '2222',
+                    createdAt: 1700000000,
+                  ),
+                ],
+              ),
+              onDeviceNotifierCreated: (notifier) => deviceNotifier = notifier,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.text(
+              'Only a session with your main nsec can link more devices',
+            ),
+            findsNothing,
+          );
+
+          await tester.tap(find.text('Register This Device'));
+          await tester.pumpAndSettle();
+
+          expect(deviceNotifier, isNotNull);
+          expect(deviceNotifier!.registerCalls, 1);
         },
       );
 

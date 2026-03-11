@@ -32,6 +32,9 @@ class _FakeAuthRepository implements AuthRepository {
   Future<String?> getPrivateKey() async => privateKeyHex;
 
   @override
+  Future<String?> getOwnerPrivateKey() async => null;
+
+  @override
   Future<bool> hasIdentity() {
     throw UnimplementedError();
   }

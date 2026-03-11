@@ -60,11 +60,16 @@ class SecureStorageService {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) return null;
-      final priv = decoded['privkeyHex'];
+      final priv = decoded['devicePrivkeyHex'] ?? decoded['privkeyHex'];
       final pub = decoded['pubkeyHex'];
+      final ownerPriv = decoded['ownerPrivkeyHex'];
       if (priv is! String || priv.isEmpty) return null;
       if (pub is! String || pub.isEmpty) return null;
-      return {'privkeyHex': priv, 'pubkeyHex': pub};
+      final parsed = <String, String>{'privkeyHex': priv, 'pubkeyHex': pub};
+      if (ownerPriv is String && ownerPriv.isNotEmpty) {
+        parsed['ownerPrivkeyHex'] = ownerPriv;
+      }
+      return parsed;
     } catch (_) {
       return null;
     }
@@ -122,10 +127,13 @@ class SecureStorageService {
   Future<void> saveIdentity({
     required String privkeyHex,
     required String pubkeyHex,
+    String? ownerPrivkeyHex,
   }) async {
-    final payload = jsonEncode({
-      'privkeyHex': privkeyHex,
+    final payload = jsonEncode(<String, String>{
+      'devicePrivkeyHex': privkeyHex,
       'pubkeyHex': pubkeyHex,
+      if (ownerPrivkeyHex != null && ownerPrivkeyHex.isNotEmpty)
+        'ownerPrivkeyHex': ownerPrivkeyHex,
     });
     await _storage.write(key: _identityKey, value: payload);
 
@@ -137,7 +145,12 @@ class SecureStorageService {
       await _storage.delete(key: _pubkeyKey);
     } catch (_) {}
 
-    _cachedIdentity = {'privkeyHex': privkeyHex, 'pubkeyHex': pubkeyHex};
+    _cachedIdentity = <String, String>{
+      'privkeyHex': privkeyHex,
+      'pubkeyHex': pubkeyHex,
+      if (ownerPrivkeyHex != null && ownerPrivkeyHex.isNotEmpty)
+        'ownerPrivkeyHex': ownerPrivkeyHex,
+    };
     _identityCacheLoaded = true;
     _identityStateVersion += 1;
   }
@@ -157,6 +170,12 @@ class SecureStorageService {
     if (identity != null) return identity['privkeyHex'];
     // Fallback for legacy layouts or partial state.
     return _storage.read(key: _privkeyKey);
+  }
+
+  /// Get the stored owner private key, if this device can still sign as owner.
+  Future<String?> getOwnerPrivateKey() async {
+    final identity = await _loadIdentity();
+    return identity?['ownerPrivkeyHex'];
   }
 
   /// Save the user's public key.

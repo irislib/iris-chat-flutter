@@ -24,6 +24,7 @@ class AuthRepositoryImpl implements AuthRepository {
     await _storage.saveIdentity(
       privkeyHex: keypair.privateKeyHex,
       pubkeyHex: keypair.publicKeyHex,
+      ownerPrivkeyHex: keypair.privateKeyHex,
     );
 
     return Identity(pubkeyHex: keypair.publicKeyHex, createdAt: DateTime.now());
@@ -37,8 +38,9 @@ class AuthRepositoryImpl implements AuthRepository {
     final ownerPrivkeyHex = _normalizePrivateKeyNsec(privateKeyNsec);
     final ownerPubkeyHex = await _derivePublicKey(ownerPrivkeyHex);
 
-    final normalizedDevicePrivkeyHex =
-        devicePrivkeyHex?.trim().toLowerCase() ?? ownerPrivkeyHex;
+    final normalizedDevicePrivkeyHex = await _resolveDevicePrivateKeyHex(
+      devicePrivkeyHex,
+    );
     if (!_isValidPrivateKey(normalizedDevicePrivkeyHex)) {
       throw const InvalidKeyException(_invalidDevicePrivateKeyMessage);
     }
@@ -50,6 +52,7 @@ class AuthRepositoryImpl implements AuthRepository {
     await _storage.saveIdentity(
       privkeyHex: normalizedDevicePrivkeyHex,
       pubkeyHex: ownerPubkeyHex,
+      ownerPrivkeyHex: ownerPrivkeyHex,
     );
 
     return Identity(pubkeyHex: ownerPubkeyHex, createdAt: DateTime.now());
@@ -106,6 +109,28 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<String?> getOwnerPrivateKey() async {
+    final explicitOwnerPrivkeyHex = await _storage.getOwnerPrivateKey();
+    if (explicitOwnerPrivkeyHex != null && explicitOwnerPrivkeyHex.isNotEmpty) {
+      return explicitOwnerPrivkeyHex;
+    }
+
+    final devicePrivkeyHex = await _storage.getPrivateKey();
+    final ownerPubkeyHex = await _storage.getPublicKey();
+    if (devicePrivkeyHex == null || ownerPubkeyHex == null) return null;
+
+    try {
+      final derivedDevicePubkeyHex = await _derivePublicKey(devicePrivkeyHex);
+      if (derivedDevicePubkeyHex.trim().toLowerCase() ==
+          ownerPubkeyHex.trim().toLowerCase()) {
+        return devicePrivkeyHex;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  @override
   Future<String?> getDevicePubkeyHex() async {
     final privkeyHex = await _storage.getPrivateKey();
     if (privkeyHex == null) return null;
@@ -157,6 +182,15 @@ class AuthRepositoryImpl implements AuthRepository {
   bool _isValidHexKey(String hex) {
     if (hex.length != 64) return false;
     return RegExp(r'^[0-9a-fA-F]+$').hasMatch(hex);
+  }
+
+  Future<String> _resolveDevicePrivateKeyHex(String? devicePrivkeyHex) async {
+    if (devicePrivkeyHex != null) {
+      return devicePrivkeyHex.trim().toLowerCase();
+    }
+
+    final generated = await NdrFfi.generateKeypair();
+    return generated.privateKeyHex.trim().toLowerCase();
   }
 
   Future<String> _derivePublicKey(String privkeyHex) async {

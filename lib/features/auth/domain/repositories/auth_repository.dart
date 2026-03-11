@@ -30,6 +30,9 @@ abstract class AuthRepository {
   /// Get the stored private key (use with caution).
   Future<String?> getPrivateKey();
 
+  /// Get the owner private key when this device can still sign as owner.
+  Future<String?> getOwnerPrivateKey();
+
   /// Get the current device public key (derived from the stored private key).
   Future<String?> getDevicePubkeyHex();
 }

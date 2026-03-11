@@ -16,6 +16,7 @@ abstract class AuthState with _$AuthState {
     @Default(false) bool isLoading,
     @Default(false) bool isInitialized,
     @Default(false) bool isLinkedDevice,
+    @Default(false) bool hasOwnerKey,
     String? pubkeyHex,
     String? devicePubkeyHex,
     String? error,
@@ -35,6 +36,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final identity = await _repository.getCurrentIdentity();
       if (identity != null) {
         final devicePubkeyHex = await _repository.getDevicePubkeyHex();
+        final ownerPrivkeyHex = await _repository.getOwnerPrivateKey();
         if (devicePubkeyHex == null) {
           state = state.copyWith(
             isAuthenticated: false,
@@ -43,6 +45,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             pubkeyHex: null,
             devicePubkeyHex: null,
             isLinkedDevice: false,
+            hasOwnerKey: false,
             error: 'Private key not found',
           );
           return;
@@ -54,6 +57,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
           pubkeyHex: identity.pubkeyHex,
           devicePubkeyHex: devicePubkeyHex,
           isLinkedDevice: devicePubkeyHex != identity.pubkeyHex,
+          hasOwnerKey:
+              ownerPrivkeyHex != null && ownerPrivkeyHex.trim().isNotEmpty,
         );
       } else {
         state = state.copyWith(
@@ -63,6 +68,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           pubkeyHex: null,
           devicePubkeyHex: null,
           isLinkedDevice: false,
+          hasOwnerKey: false,
         );
       }
     } catch (e) {
@@ -70,6 +76,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         isLoading: false,
         isInitialized: true,
         isLinkedDevice: false,
+        hasOwnerKey: false,
         error: e.toString(),
       );
     }
@@ -86,6 +93,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         pubkeyHex: identity.pubkeyHex,
         devicePubkeyHex: identity.pubkeyHex,
         isLinkedDevice: false,
+        hasOwnerKey: true,
         isInitialized: true,
       );
     } catch (e) {
@@ -102,6 +110,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         devicePrivkeyHex: devicePrivkeyHex,
       );
       final devicePubkeyHex = await _repository.getDevicePubkeyHex();
+      final ownerPrivkeyHex = await _repository.getOwnerPrivateKey();
       state = state.copyWith(
         isAuthenticated: true,
         isLoading: false,
@@ -109,6 +118,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         devicePubkeyHex: devicePubkeyHex,
         isLinkedDevice:
             devicePubkeyHex != null && devicePubkeyHex != identity.pubkeyHex,
+        hasOwnerKey:
+            ownerPrivkeyHex != null && ownerPrivkeyHex.trim().isNotEmpty,
         isInitialized: true,
       );
     } on InvalidKeyException catch (e) {
@@ -131,6 +142,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
 
       final devicePubkeyHex = await _repository.getDevicePubkeyHex();
+      final ownerPrivkeyHex = await _repository.getOwnerPrivateKey();
       state = state.copyWith(
         isAuthenticated: true,
         isLoading: false,
@@ -138,6 +150,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         devicePubkeyHex: devicePubkeyHex,
         isLinkedDevice:
             devicePubkeyHex != null && devicePubkeyHex != identity.pubkeyHex,
+        hasOwnerKey:
+            ownerPrivkeyHex != null && ownerPrivkeyHex.trim().isNotEmpty,
         isInitialized: true,
       );
     } on InvalidKeyException catch (e) {

@@ -1148,7 +1148,7 @@ void main() {
     const registerDeviceFlag = String.fromEnvironment(
       'IRIS_INTEROP_REGISTER_DEVICE',
     );
-    final registerDeviceOnLogin = registerDeviceFlag == '1';
+    const registerDeviceOnLogin = registerDeviceFlag == '1';
 
     final relayUrls = relayUrlsRaw
         .split(',')

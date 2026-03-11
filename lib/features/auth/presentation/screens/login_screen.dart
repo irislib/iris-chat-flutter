@@ -9,7 +9,6 @@ import '../../../../config/providers/auth_provider.dart';
 import '../../../../config/providers/chat_provider.dart';
 import '../../../../config/providers/invite_provider.dart';
 import '../../../../config/providers/login_device_registration_provider.dart';
-import '../../../../core/ffi/ndr_ffi.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -81,7 +80,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (latestCandidate == null || latestCandidate != nsecCandidate) return;
 
       _lastAutoSubmittedNsec = nsecCandidate;
-      unawaited(_login(skipDeviceRegistrationPrompt: true));
+      unawaited(_login());
     });
   }
 
@@ -122,7 +121,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     final ownerPrivkeyHex = await ref
         .read(authRepositoryProvider)
-        .getPrivateKey();
+        .getOwnerPrivateKey();
     if (ownerPrivkeyHex == null) return;
 
     try {
@@ -139,140 +138,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _login({bool skipDeviceRegistrationPrompt = false}) async {
+  Future<void> _registerCurrentDeviceForImportedIdentity() async {
+    final authState = ref.read(authStateProvider);
+    final ownerPubkeyHex = authState.pubkeyHex;
+    final devicePubkeyHex = authState.devicePubkeyHex;
+    if (!authState.hasOwnerKey ||
+        ownerPubkeyHex == null ||
+        devicePubkeyHex == null) {
+      return;
+    }
+
+    final ownerPrivkeyHex = await ref
+        .read(authRepositoryProvider)
+        .getOwnerPrivateKey();
+    if (ownerPrivkeyHex == null) return;
+
+    try {
+      await ref
+          .read(loginDeviceRegistrationServiceProvider)
+          .registerDevice(
+            ownerPubkeyHex: ownerPubkeyHex,
+            ownerPrivkeyHex: ownerPrivkeyHex,
+            devicePubkeyHex: devicePubkeyHex,
+          );
+    } catch (_) {
+      // Non-blocking: login succeeds even if relay publishing fails.
+    }
+  }
+
+  Future<void> _login() async {
     final key = _keyController.text.trim();
     if (key.isEmpty) return;
 
-    final registrationService = ref.read(
-      loginDeviceRegistrationServiceProvider,
-    );
-
-    LoginDeviceRegistrationPreview? preview;
-    var shouldRegisterDevice = false;
-    if (!skipDeviceRegistrationPrompt) {
-      try {
-        preview = await registrationService.buildPreviewFromPrivateKeyNsec(key);
-        if (!mounted) return;
-        final decision = await _showDeviceRegistrationDialog(preview);
-        if (decision == null) return;
-        shouldRegisterDevice = decision;
-      } catch (_) {
-        // Allow auth flow to surface invalid key / storage errors.
-      }
-    }
-
-    await ref
-        .read(authStateProvider.notifier)
-        .login(
-          key,
-          devicePrivkeyHex: shouldRegisterDevice
-              ? preview?.currentDevicePrivkeyHex
-              : null,
-        );
+    await ref.read(authStateProvider.notifier).login(key);
     final state = ref.read(authStateProvider);
     if (!state.isAuthenticated) return;
-
-    if (shouldRegisterDevice && preview != null) {
-      try {
-        await registrationService.publishDeviceList(
-          ownerPubkeyHex: preview.ownerPubkeyHex,
-          ownerPrivkeyHex: preview.ownerPrivkeyHex,
-          devices: preview.devicesIfRegistered,
-        );
-      } catch (_) {
-        // Non-blocking: login succeeds even if relay publishing fails.
-      }
-    }
+    await _registerCurrentDeviceForImportedIdentity();
 
     if (!mounted) return;
     context.go('/chats');
-  }
-
-  Future<bool?> _showDeviceRegistrationDialog(
-    LoginDeviceRegistrationPreview preview,
-  ) {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Register This Device?'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (!preview.deviceListLoaded) ...[
-                  const Text(
-                    'Could not fully load device list from relays. You can still sign in.',
-                  ),
-                  if (preview.deviceListLoadError != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      preview.deviceListLoadError!,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                ],
-                _buildDeviceListSection(
-                  title: 'Current devices',
-                  devices: preview.existingDevices,
-                  currentDevicePubkeyHex: preview.currentDevicePubkeyHex,
-                ),
-                const SizedBox(height: 12),
-                _buildDeviceListSection(
-                  title: 'After registering this device',
-                  devices: preview.devicesIfRegistered,
-                  currentDevicePubkeyHex: preview.currentDevicePubkeyHex,
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Sign In Without Registering'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Sign In and Register'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildDeviceListSection({
-    required String title,
-    required List<FfiDeviceEntry> devices,
-    required String currentDevicePubkeyHex,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        if (devices.isEmpty)
-          const Text('No registered devices')
-        else
-          for (final device in devices)
-            Text(
-              '• ${_shortPubkey(device.identityPubkeyHex)}${_isCurrentDevice(device.identityPubkeyHex, currentDevicePubkeyHex) ? ' (this device)' : ''}',
-            ),
-      ],
-    );
-  }
-
-  bool _isCurrentDevice(String devicePubkeyHex, String currentDevicePubkeyHex) {
-    return devicePubkeyHex.trim().toLowerCase() ==
-        currentDevicePubkeyHex.trim().toLowerCase();
-  }
-
-  String _shortPubkey(String pubkeyHex) {
-    if (pubkeyHex.length <= 16) return pubkeyHex;
-    return '${pubkeyHex.substring(0, 8)}...${pubkeyHex.substring(pubkeyHex.length - 8)}';
   }
 
   @override

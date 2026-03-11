@@ -35,7 +35,7 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
     final deviceState = ref.watch(deviceManagerProvider);
-    final canManageDevices = !authState.isLinkedDevice;
+    final canManageDevices = authState.hasOwnerKey;
     final startupLaunchState = ref.watch(startupLaunchProvider);
     final messagingPreferences = ref.watch(messagingPreferencesProvider);
     final imgproxySettings = ref.watch(imgproxySettingsProvider);
@@ -122,7 +122,7 @@ class SettingsScreen extends ConsumerWidget {
                   : const Icon(Icons.badge),
               title: const Text('Profile'),
               subtitle: Text(
-                authState.isLinkedDevice
+                !authState.hasOwnerKey
                     ? 'This device cannot edit the owner profile'
                     : _profileSummary(ownProfile),
               ),
@@ -130,7 +130,7 @@ class SettingsScreen extends ConsumerWidget {
                 context,
                 ref,
                 ownerPubkeyHex: authState.pubkeyHex!,
-                isLinkedDevice: authState.isLinkedDevice,
+                hasOwnerKey: authState.hasOwnerKey,
               ),
             ),
 
@@ -140,7 +140,7 @@ class SettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.devices),
             title: const Text('Link a Device'),
             subtitle: Text(
-              _deviceLinkSubtitle(isLinkedDevice: authState.isLinkedDevice),
+              _deviceLinkSubtitle(canManageDevices: canManageDevices),
             ),
             onTap: canManageDevices ? () => context.push('/invite/scan') : null,
           ),
@@ -159,7 +159,7 @@ class SettingsScreen extends ConsumerWidget {
                   ? () => _registerCurrentDevice(context, ref)
                   : () => _showRegisterCurrentDeviceHelpDialog(context),
             ),
-          if (authState.isLinkedDevice)
+          if (!authState.hasOwnerKey)
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('Device Access'),
@@ -181,7 +181,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           if (!deviceState.isLoading && deviceState.devices.isEmpty)
             ListTile(
-              leading: Icon(Icons.devices_other),
+              leading: const Icon(Icons.devices_other),
               title: const Text('No registered devices yet'),
               subtitle: Text(
                 canManageDevices
@@ -661,8 +661,8 @@ class SettingsScreen extends ConsumerWidget {
     return 'No profile metadata published';
   }
 
-  String _deviceLinkSubtitle({required bool isLinkedDevice}) {
-    if (!isLinkedDevice) {
+  String _deviceLinkSubtitle({required bool canManageDevices}) {
+    if (canManageDevices) {
       return 'Scan a link invite from the new device';
     }
     return 'Only a session with your main nsec can link more devices';
@@ -759,9 +759,9 @@ class SettingsScreen extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref, {
     required String ownerPubkeyHex,
-    required bool isLinkedDevice,
+    required bool hasOwnerKey,
   }) async {
-    if (isLinkedDevice) {
+    if (!hasOwnerKey) {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -835,6 +835,7 @@ class SettingsScreen extends ConsumerWidget {
                 pictureUrl: pictureController.text,
               );
               if (draft == null) return;
+              if (!context.mounted) return;
               if (dialogContext.mounted) {
                 Navigator.of(dialogContext, rootNavigator: true).pop();
               }
@@ -865,7 +866,7 @@ class SettingsScreen extends ConsumerWidget {
     required String pictureUrl,
   }) async {
     final authRepo = ref.read(authRepositoryProvider);
-    final privkey = await authRepo.getPrivateKey();
+    final privkey = await authRepo.getOwnerPrivateKey();
     if (privkey == null || privkey.trim().isEmpty) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

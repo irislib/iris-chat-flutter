@@ -57,6 +57,12 @@ abstract class LoginDeviceRegistrationService {
     required String ownerPrivkeyHex,
     required String devicePubkeyHex,
   });
+
+  Future<void> registerDevice({
+    required String ownerPubkeyHex,
+    required String ownerPrivkeyHex,
+    required String devicePubkeyHex,
+  });
 }
 
 class LoginDeviceRegistrationServiceImpl
@@ -138,6 +144,26 @@ class LoginDeviceRegistrationServiceImpl
       devices: [
         FfiDeviceEntry(identityPubkeyHex: devicePubkeyHex, createdAt: now),
       ],
+    );
+  }
+
+  @override
+  Future<void> registerDevice({
+    required String ownerPubkeyHex,
+    required String ownerPrivkeyHex,
+    required String devicePubkeyHex,
+  }) async {
+    final merged = await _loadLatestDevicesMap(ownerPubkeyHex);
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    merged.putIfAbsent(
+      _normalizeHex(devicePubkeyHex) ?? devicePubkeyHex,
+      () => now,
+    );
+
+    await publishDeviceList(
+      ownerPubkeyHex: ownerPubkeyHex,
+      ownerPrivkeyHex: ownerPrivkeyHex,
+      devices: _sortedDevices(merged, devicePubkeyHex),
     );
   }
 

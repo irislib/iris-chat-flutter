@@ -46,11 +46,37 @@ void main() {
         verify(
           () => mockStorage.write(
             key: 'iris_chat_identity',
-            value: '{"privkeyHex":"priv","pubkeyHex":"pub"}',
+            value: '{"devicePrivkeyHex":"priv","pubkeyHex":"pub"}',
           ),
         ).called(1);
         verify(() => mockStorage.delete(key: 'iris_chat_privkey')).called(1);
         verify(() => mockStorage.delete(key: 'iris_chat_pubkey')).called(1);
+      });
+
+      test('writes owner private key when provided', () async {
+        when(
+          () => mockStorage.write(
+            key: any(named: 'key'),
+            value: any(named: 'value'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => mockStorage.delete(key: any(named: 'key')),
+        ).thenAnswer((_) async {});
+
+        await service.saveIdentity(
+          privkeyHex: 'device',
+          pubkeyHex: 'owner-pub',
+          ownerPrivkeyHex: 'owner-priv',
+        );
+
+        verify(
+          () => mockStorage.write(
+            key: 'iris_chat_identity',
+            value:
+                '{"devicePrivkeyHex":"device","pubkeyHex":"owner-pub","ownerPrivkeyHex":"owner-priv"}',
+          ),
+        ).called(1);
       });
     });
 
@@ -103,6 +129,29 @@ void main() {
         ).thenAnswer((_) async => null);
 
         final result = await service.getPrivateKey();
+
+        expect(result, isNull);
+      });
+    });
+
+    group('getOwnerPrivateKey', () {
+      test('returns stored owner key when present', () async {
+        when(() => mockStorage.read(key: 'iris_chat_identity')).thenAnswer(
+          (_) async =>
+              '{"devicePrivkeyHex":"device","pubkeyHex":"owner-pub","ownerPrivkeyHex":"owner-priv"}',
+        );
+
+        final result = await service.getOwnerPrivateKey();
+
+        expect(result, 'owner-priv');
+      });
+
+      test('returns null when owner key not found', () async {
+        when(
+          () => mockStorage.read(key: 'iris_chat_identity'),
+        ).thenAnswer((_) async => '{"privkeyHex":"device","pubkeyHex":"pub"}');
+
+        final result = await service.getOwnerPrivateKey();
 
         expect(result, isNull);
       });

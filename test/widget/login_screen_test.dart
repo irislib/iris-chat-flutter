@@ -6,7 +6,6 @@ import 'package:iris_chat/config/providers/auth_provider.dart';
 import 'package:iris_chat/config/providers/chat_provider.dart';
 import 'package:iris_chat/config/providers/invite_provider.dart';
 import 'package:iris_chat/config/providers/login_device_registration_provider.dart';
-import 'package:iris_chat/core/ffi/ndr_ffi.dart';
 import 'package:iris_chat/core/services/database_service.dart';
 import 'package:iris_chat/features/auth/domain/models/identity.dart';
 import 'package:iris_chat/features/auth/domain/repositories/auth_repository.dart';
@@ -39,8 +38,6 @@ class _TestLoginInviteNotifier extends InviteNotifier {
   }
 }
 
-const generatedDevicePrivkeyHex =
-    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const generatedDevicePubkeyHex =
     'b1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
 
@@ -64,27 +61,10 @@ void main() {
     ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
     when(
       () => mockAuthRepo.getDevicePubkeyHex(),
-    ).thenAnswer((_) async => testPubkeyHex);
+    ).thenAnswer((_) async => generatedDevicePubkeyHex);
     when(
-      () => mockLoginDeviceRegistrationService.buildPreviewFromPrivateKeyNsec(
-        any(),
-      ),
-    ).thenAnswer(
-      (_) async => const LoginDeviceRegistrationPreview(
-        ownerPubkeyHex: testPubkeyHex,
-        ownerPrivkeyHex: testPrivkeyHex,
-        currentDevicePrivkeyHex: generatedDevicePrivkeyHex,
-        currentDevicePubkeyHex: generatedDevicePubkeyHex,
-        existingDevices: [],
-        devicesIfRegistered: [
-          FfiDeviceEntry(
-            identityPubkeyHex: generatedDevicePubkeyHex,
-            createdAt: 1,
-          ),
-        ],
-        deviceListLoaded: true,
-      ),
-    );
+      () => mockAuthRepo.getOwnerPrivateKey(),
+    ).thenAnswer((_) async => testPrivkeyHex);
     when(
       () => mockLoginDeviceRegistrationService.publishDeviceList(
         ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
@@ -94,6 +74,13 @@ void main() {
     ).thenAnswer((_) async {});
     when(
       () => mockLoginDeviceRegistrationService.publishSingleDevice(
+        ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
+        ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
+        devicePubkeyHex: any(named: 'devicePubkeyHex'),
+      ),
+    ).thenAnswer((_) async {});
+    when(
+      () => mockLoginDeviceRegistrationService.registerDevice(
         ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
         ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
         devicePubkeyHex: any(named: 'devicePubkeyHex'),
@@ -314,7 +301,7 @@ void main() {
           () => mockAuthRepo.createIdentity(),
         ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
         when(
-          () => mockAuthRepo.getPrivateKey(),
+          () => mockAuthRepo.getOwnerPrivateKey(),
         ).thenAnswer((_) async => testPrivkeyHex);
 
         await tester.pumpWidget(buildLoginScreenRouter());
@@ -341,7 +328,7 @@ void main() {
           () => mockAuthRepo.createIdentity(),
         ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
         when(
-          () => mockAuthRepo.getPrivateKey(),
+          () => mockAuthRepo.getOwnerPrivateKey(),
         ).thenAnswer((_) async => testPrivkeyHex);
 
         await tester.pumpWidget(
@@ -415,8 +402,6 @@ void main() {
         await tester.enterText(find.byType(TextField), 'invalid-key');
         await tester.tap(find.text('Login'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Sign In Without Registering'));
-        await tester.pumpAndSettle();
 
         expect(find.text('Invalid key format'), findsOneWidget);
       });
@@ -438,15 +423,13 @@ void main() {
         await tester.enterText(find.byType(TextField), 'bad-key');
         await tester.tap(find.text('Login'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Sign In Without Registering'));
-        await tester.pumpAndSettle();
 
         expect(find.text('Test error'), findsOneWidget);
       });
     });
 
-    group('device registration prompt', () {
-      testWidgets('login prompts for device registration preview', (
+    group('nsec login', () {
+      testWidgets('login does not prompt for device registration', (
         tester,
       ) async {
         when(
@@ -466,12 +449,11 @@ void main() {
         await tester.tap(find.text('Login'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Register This Device?'), findsOneWidget);
+        expect(find.text('Register This Device?'), findsNothing);
+        expect(find.text('Chats Screen'), findsOneWidget);
       });
 
-      testWidgets('can sign in without registering this device', (
-        tester,
-      ) async {
+      testWidgets('login registers the generated device key', (tester) async {
         when(
           () => mockAuthRepo.login(
             any(),
@@ -487,21 +469,18 @@ void main() {
 
         await tester.enterText(find.byType(TextField), 'nsec1dummykey');
         await tester.tap(find.text('Login'));
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.text('Sign In Without Registering'));
         await tester.pumpAndSettle();
 
         verify(
           () => mockAuthRepo.login('nsec1dummykey', devicePrivkeyHex: null),
         ).called(1);
-        verifyNever(
-          () => mockLoginDeviceRegistrationService.publishDeviceList(
-            ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
-            ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
-            devices: any(named: 'devices'),
+        verify(
+          () => mockLoginDeviceRegistrationService.registerDevice(
+            ownerPubkeyHex: testPubkeyHex,
+            ownerPrivkeyHex: testPrivkeyHex,
+            devicePubkeyHex: generatedDevicePubkeyHex,
           ),
-        );
+        ).called(1);
       });
 
       testWidgets(
@@ -527,61 +506,52 @@ void main() {
 
           expect(find.text('Register This Device?'), findsNothing);
           expect(find.text('Chats Screen'), findsOneWidget);
-          verifyNever(
-            () => mockLoginDeviceRegistrationService
-                .buildPreviewFromPrivateKeyNsec(any()),
-          );
           verify(
             () => mockAuthRepo.login(nsec, devicePrivkeyHex: null),
+          ).called(1);
+          verify(
+            () => mockLoginDeviceRegistrationService.registerDevice(
+              ownerPubkeyHex: testPubkeyHex,
+              ownerPrivkeyHex: testPrivkeyHex,
+              devicePubkeyHex: generatedDevicePubkeyHex,
+            ),
           ).called(1);
         },
       );
 
-      testWidgets('can sign in and register this device', (tester) async {
-        when(
-          () => mockAuthRepo.login(
-            any(),
-            devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
-          ),
-        ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+      testWidgets(
+        'login still succeeds when device registration publish fails',
+        (tester) async {
+          when(
+            () => mockAuthRepo.login(
+              any(),
+              devicePrivkeyHex: any(named: 'devicePrivkeyHex'),
+            ),
+          ).thenAnswer((_) async => const Identity(pubkeyHex: testPubkeyHex));
+          when(
+            () => mockLoginDeviceRegistrationService.registerDevice(
+              ownerPubkeyHex: any(named: 'ownerPubkeyHex'),
+              ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
+              devicePubkeyHex: any(named: 'devicePubkeyHex'),
+            ),
+          ).thenThrow(Exception('relay failed'));
 
-        await tester.pumpWidget(buildLoginScreenRouter());
-        await tester.pumpAndSettle();
+          await tester.pumpWidget(buildLoginScreenRouter());
+          await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Import Existing Key'));
-        await tester.pumpAndSettle();
+          await tester.tap(find.text('Import Existing Key'));
+          await tester.pumpAndSettle();
 
-        await tester.enterText(find.byType(TextField), 'nsec1dummykey');
-        await tester.tap(find.text('Login'));
-        await tester.pumpAndSettle();
+          await tester.enterText(find.byType(TextField), 'nsec1dummykey');
+          await tester.tap(find.text('Login'));
+          await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Sign In and Register'));
-        await tester.pumpAndSettle();
-
-        verify(
-          () => mockAuthRepo.login(
-            'nsec1dummykey',
-            devicePrivkeyHex: generatedDevicePrivkeyHex,
-          ),
-        ).called(1);
-        final capturedDevices =
-            verify(
-                  () => mockLoginDeviceRegistrationService.publishDeviceList(
-                    ownerPubkeyHex: testPubkeyHex,
-                    ownerPrivkeyHex: testPrivkeyHex,
-                    devices: captureAny(named: 'devices'),
-                  ),
-                ).captured.single
-                as List<FfiDeviceEntry>;
-        expect(
-          capturedDevices.map((d) => d.identityPubkeyHex),
-          contains(generatedDevicePubkeyHex),
-        );
-        expect(
-          capturedDevices.map((d) => d.identityPubkeyHex),
-          isNot(contains(testPubkeyHex)),
-        );
-      });
+          verify(
+            () => mockAuthRepo.login('nsec1dummykey', devicePrivkeyHex: null),
+          ).called(1);
+          expect(find.text('Chats Screen'), findsOneWidget);
+        },
+      );
     });
   });
 }

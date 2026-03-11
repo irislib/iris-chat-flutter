@@ -107,7 +107,7 @@ class DeviceManagerNotifier extends StateNotifier<DeviceManagerState> {
       state = state.copyWith(error: 'Not authenticated');
       return false;
     }
-    if (authState.isLinkedDevice) {
+    if (!authState.hasOwnerKey) {
       state = state.copyWith(
         error: 'Linked devices cannot register other devices',
       );
@@ -116,7 +116,7 @@ class DeviceManagerNotifier extends StateNotifier<DeviceManagerState> {
 
     state = state.copyWith(isUpdating: true, clearError: true);
     try {
-      final ownerPrivkeyHex = await _authRepository.getPrivateKey();
+      final ownerPrivkeyHex = await _authRepository.getOwnerPrivateKey();
       if (ownerPrivkeyHex == null) {
         throw Exception('Private key not found');
       }
@@ -159,7 +159,7 @@ class DeviceManagerNotifier extends StateNotifier<DeviceManagerState> {
       state = state.copyWith(error: 'Not authenticated');
       return false;
     }
-    if (authState.isLinkedDevice) {
+    if (!authState.hasOwnerKey) {
       state = state.copyWith(error: 'Linked devices cannot delete devices');
       return false;
     }
@@ -172,7 +172,7 @@ class DeviceManagerNotifier extends StateNotifier<DeviceManagerState> {
 
     state = state.copyWith(isUpdating: true, clearError: true);
     try {
-      final ownerPrivkeyHex = await _authRepository.getPrivateKey();
+      final ownerPrivkeyHex = await _authRepository.getOwnerPrivateKey();
       if (ownerPrivkeyHex == null) {
         throw Exception('Private key not found');
       }

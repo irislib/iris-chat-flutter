@@ -37,6 +37,10 @@ void main() {
         expect(notifier.state.isLinkedDevice, false);
       });
 
+      test('does not have owner-key capability', () {
+        expect(notifier.state.hasOwnerKey, false);
+      });
+
       test('has no error', () {
         expect(notifier.state.error, isNull);
       });
@@ -52,6 +56,9 @@ void main() {
         when(
           () => mockRepo.getDevicePubkeyHex(),
         ).thenAnswer((_) async => testPubkey);
+        when(
+          () => mockRepo.getOwnerPrivateKey(),
+        ).thenAnswer((_) async => 'owner-key');
 
         await notifier.checkAuth();
 
@@ -59,6 +66,7 @@ void main() {
         expect(notifier.state.pubkeyHex, testPubkey);
         expect(notifier.state.devicePubkeyHex, testPubkey);
         expect(notifier.state.isLinkedDevice, false);
+        expect(notifier.state.hasOwnerKey, true);
         expect(notifier.state.isInitialized, true);
       });
 
@@ -75,6 +83,9 @@ void main() {
           when(
             () => mockRepo.getDevicePubkeyHex(),
           ).thenAnswer((_) async => devicePubkey);
+          when(
+            () => mockRepo.getOwnerPrivateKey(),
+          ).thenAnswer((_) async => null);
 
           await notifier.checkAuth();
 
@@ -82,6 +93,7 @@ void main() {
           expect(notifier.state.pubkeyHex, ownerPubkey);
           expect(notifier.state.devicePubkeyHex, devicePubkey);
           expect(notifier.state.isLinkedDevice, true);
+          expect(notifier.state.hasOwnerKey, false);
           expect(notifier.state.isInitialized, true);
         },
       );
@@ -123,6 +135,7 @@ void main() {
         expect(notifier.state.pubkeyHex, testPubkey);
         expect(notifier.state.devicePubkeyHex, testPubkey);
         expect(notifier.state.isLinkedDevice, false);
+        expect(notifier.state.hasOwnerKey, true);
         expect(notifier.state.isLoading, false);
       });
 
@@ -159,6 +172,9 @@ void main() {
           when(
             () => mockRepo.getDevicePubkeyHex(),
           ).thenAnswer((_) async => devicePubkey);
+          when(
+            () => mockRepo.getOwnerPrivateKey(),
+          ).thenAnswer((_) async => 'owner-key');
 
           await notifier.login('nsec1example', devicePrivkeyHex: devicePrivkey);
 
@@ -166,6 +182,7 @@ void main() {
           expect(notifier.state.pubkeyHex, ownerPubkey);
           expect(notifier.state.devicePubkeyHex, devicePubkey);
           expect(notifier.state.isLinkedDevice, true);
+          expect(notifier.state.hasOwnerKey, true);
         },
       );
 
@@ -180,6 +197,9 @@ void main() {
         when(
           () => mockRepo.getDevicePubkeyHex(),
         ).thenAnswer((_) async => testPubkey);
+        when(
+          () => mockRepo.getOwnerPrivateKey(),
+        ).thenAnswer((_) async => testPrivkey);
 
         await notifier.login(testPrivkey);
 
@@ -187,6 +207,7 @@ void main() {
         expect(notifier.state.pubkeyHex, testPubkey);
         expect(notifier.state.devicePubkeyHex, testPubkey);
         expect(notifier.state.isLinkedDevice, false);
+        expect(notifier.state.hasOwnerKey, true);
       });
 
       test('sets error on InvalidKeyException', () async {
@@ -222,6 +243,7 @@ void main() {
         when(
           () => mockRepo.getDevicePubkeyHex(),
         ).thenAnswer((_) async => devicePubkey);
+        when(() => mockRepo.getOwnerPrivateKey()).thenAnswer((_) async => null);
 
         await notifier.loginLinkedDevice(
           ownerPubkeyHex: ownerPubkey,
@@ -232,6 +254,7 @@ void main() {
         expect(notifier.state.pubkeyHex, ownerPubkey);
         expect(notifier.state.devicePubkeyHex, devicePubkey);
         expect(notifier.state.isLinkedDevice, true);
+        expect(notifier.state.hasOwnerKey, false);
       });
     });
 
@@ -254,6 +277,7 @@ void main() {
         expect(notifier.state.pubkeyHex, isNull);
         expect(notifier.state.devicePubkeyHex, isNull);
         expect(notifier.state.isLinkedDevice, false);
+        expect(notifier.state.hasOwnerKey, false);
         expect(notifier.state.isInitialized, true);
       });
     });

@@ -38,6 +38,9 @@ class _NoopAuthRepository implements AuthRepository {
   Future<String?> getPrivateKey() async => null;
 
   @override
+  Future<String?> getOwnerPrivateKey() async => null;
+
+  @override
   Future<String?> getDevicePubkeyHex() async => null;
 }
 

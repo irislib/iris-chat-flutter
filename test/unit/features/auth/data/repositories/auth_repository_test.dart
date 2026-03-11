@@ -19,6 +19,10 @@ void main() {
       'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
   const testPrivkey =
       'f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2d3c4b5a6f1e2';
+  const generatedDevicePrivkey =
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  const generatedDevicePubkey =
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
   setUp(() {
     mockStorage = MockSecureStorageService();
@@ -81,6 +85,58 @@ void main() {
       });
     });
 
+    group('getOwnerPrivateKey', () {
+      test('returns stored owner key when available', () async {
+        when(
+          () => mockStorage.getOwnerPrivateKey(),
+        ).thenAnswer((_) async => testPrivkey);
+
+        final result = await repository.getOwnerPrivateKey();
+
+        expect(result, testPrivkey);
+      });
+
+      test(
+        'infers legacy owner key when stored pubkey matches device key',
+        () async {
+          when(
+            () => mockStorage.getOwnerPrivateKey(),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockStorage.getPrivateKey(),
+          ).thenAnswer((_) async => testPrivkey);
+          when(
+            () => mockStorage.getPublicKey(),
+          ).thenAnswer((_) async => testPubkey);
+
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(
+                const MethodChannel('to.iris.chat/ndr_ffi'),
+                (MethodCall methodCall) async {
+                  if (methodCall.method == 'derivePublicKey') {
+                    final args = methodCall.arguments as Map<dynamic, dynamic>;
+                    final privkeyHex = args['privkeyHex'] as String;
+                    if (privkeyHex == testPrivkey) {
+                      return testPubkey;
+                    }
+                  }
+                  return null;
+                },
+              );
+
+          final result = await repository.getOwnerPrivateKey();
+
+          expect(result, testPrivkey);
+
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(
+                const MethodChannel('to.iris.chat/ndr_ffi'),
+                null,
+              );
+        },
+      );
+    });
+
     group('login', () {
       test(
         'throws InvalidKeyException for invalid key format - too short',
@@ -134,6 +190,7 @@ void main() {
           () => mockStorage.saveIdentity(
             privkeyHex: any(named: 'privkeyHex'),
             pubkeyHex: any(named: 'pubkeyHex'),
+            ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
           ),
         ).thenAnswer((_) async {});
 
@@ -144,6 +201,7 @@ void main() {
           () => mockStorage.saveIdentity(
             privkeyHex: testPrivkey,
             pubkeyHex: testPubkey,
+            ownerPrivkeyHex: testPrivkey,
           ),
         ).called(1);
 
@@ -158,17 +216,26 @@ void main() {
 
     group('login with valid key', () {
       test(
-        'stores owner key by default and keeps nsec pubkey as owner',
+        'stores generated device key and keeps owner key separately by default',
         () async {
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
               .setMockMethodCallHandler(
                 const MethodChannel('to.iris.chat/ndr_ffi'),
                 (MethodCall methodCall) async {
+                  if (methodCall.method == 'generateKeypair') {
+                    return {
+                      'publicKeyHex': generatedDevicePubkey,
+                      'privateKeyHex': generatedDevicePrivkey,
+                    };
+                  }
                   if (methodCall.method == 'derivePublicKey') {
                     final args = methodCall.arguments as Map<dynamic, dynamic>;
                     final privkeyHex = args['privkeyHex'] as String;
                     if (privkeyHex == testPrivkey) {
                       return testPubkey;
+                    }
+                    if (privkeyHex == generatedDevicePrivkey) {
+                      return generatedDevicePubkey;
                     }
                   }
                   return null;
@@ -179,6 +246,7 @@ void main() {
             () => mockStorage.saveIdentity(
               privkeyHex: any(named: 'privkeyHex'),
               pubkeyHex: any(named: 'pubkeyHex'),
+              ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
             ),
           ).thenAnswer((_) async {});
 
@@ -187,8 +255,9 @@ void main() {
           expect(result.pubkeyHex, testPubkey);
           verify(
             () => mockStorage.saveIdentity(
-              privkeyHex: testPrivkey,
+              privkeyHex: generatedDevicePrivkey,
               pubkeyHex: testPubkey,
+              ownerPrivkeyHex: testPrivkey,
             ),
           ).called(1);
 
@@ -220,6 +289,7 @@ void main() {
           () => mockStorage.saveIdentity(
             privkeyHex: any(named: 'privkeyHex'),
             pubkeyHex: any(named: 'pubkeyHex'),
+            ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
           ),
         ).thenAnswer((_) async {});
 
@@ -233,6 +303,7 @@ void main() {
           () => mockStorage.saveIdentity(
             privkeyHex: testPrivkey,
             pubkeyHex: testPubkey,
+            ownerPrivkeyHex: testPrivkey,
           ),
         ).called(1);
 
@@ -262,6 +333,7 @@ void main() {
           () => mockStorage.saveIdentity(
             privkeyHex: any(named: 'privkeyHex'),
             pubkeyHex: any(named: 'pubkeyHex'),
+            ownerPrivkeyHex: any(named: 'ownerPrivkeyHex'),
           ),
         ).thenAnswer((_) async {});
 
@@ -275,6 +347,7 @@ void main() {
           () => mockStorage.saveIdentity(
             privkeyHex: testPrivkey,
             pubkeyHex: testPubkey,
+            ownerPrivkeyHex: testPrivkey,
           ),
         ).called(1);
 
