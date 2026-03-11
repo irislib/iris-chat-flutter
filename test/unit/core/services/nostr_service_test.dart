@@ -287,6 +287,33 @@ void main() {
           await server.close(force: true);
         },
       );
+
+      test('keeps reconnecting after repeated relay disconnects', () async {
+        var attempts = 0;
+
+        final service = NostrService(
+          relayUrls: ['ws://127.0.0.1:1'],
+          baseReconnectDelay: const Duration(milliseconds: 5),
+          maxReconnectDelay: const Duration(milliseconds: 10),
+          connectChannel: (uri) async {
+            attempts++;
+            throw const SocketException('Connection refused');
+          },
+        );
+
+        await service.connect();
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        expect(
+          attempts,
+          greaterThan(5),
+          reason:
+              'Inbound delivery degrades if the relay client stops reconnecting '
+              'after a small fixed number of drops.',
+        );
+
+        await service.dispose();
+      });
     });
 
     group('RelayConnectionEvent', () {

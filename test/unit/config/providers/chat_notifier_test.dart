@@ -692,6 +692,74 @@ void main() {
           ).called(1);
         },
       );
+
+      test(
+        'markSessionSeen does not send seen receipts for sender-copy self messages',
+        () async {
+          const ownerPubkey =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          const otherClientPubkey =
+              '3333333333333333333333333333333333333333333333333333333333333333';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          when(
+            () => mockSessionManagerService.ownerPubkeyHex,
+          ).thenReturn(ownerPubkey);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockMessageDatasource.saveMessage(any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(any()),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+          when(
+            () => mockSessionDatasource.getSession(session.id),
+          ).thenAnswer((_) async => session);
+          when(
+            () => mockSessionManagerService.sendReceipt(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              receiptType: any(named: 'receiptType'),
+              messageIds: any(named: 'messageIds'),
+            ),
+          ).thenAnswer((_) async {});
+
+          const senderCopyRumorJson =
+              '{"id":"self-copy-1","pubkey":"$otherClientPubkey","created_at":1700000003,"kind":14,"content":"hello from another client","tags":[["p","$peerPubkey"]]}';
+
+          final received = await notifier.receiveDecryptedMessage(
+            peerPubkey,
+            senderCopyRumorJson,
+          );
+
+          expect(received, isNotNull);
+          expect(received!.isOutgoing, isTrue);
+
+          await notifier.markSessionSeen(session.id);
+
+          verifyNever(
+            () => mockSessionManagerService.sendReceipt(
+              recipientPubkeyHex: any(named: 'recipientPubkeyHex'),
+              receiptType: 'seen',
+              messageIds: any(named: 'messageIds'),
+            ),
+          );
+          verifyNever(
+            () =>
+                mockMessageDatasource.updateIncomingStatusByRumorId(any(), any()),
+          );
+        },
+      );
     });
 
     group('receiveDecryptedMessage', () {
@@ -934,6 +1002,58 @@ void main() {
               MessageStatus.seen,
             ),
           ).called(1);
+        },
+      );
+
+      test(
+        'marks sender-copy messages from another client as outgoing in peer chat',
+        () async {
+          const ownerPubkey =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+          const peerPubkey =
+              '2222222222222222222222222222222222222222222222222222222222222222';
+          const otherClientPubkey =
+              '3333333333333333333333333333333333333333333333333333333333333333';
+          final session = ChatSession(
+            id: 'session-1',
+            recipientPubkeyHex: peerPubkey,
+            createdAt: DateTime.now(),
+          );
+
+          when(
+            () => mockSessionManagerService.ownerPubkeyHex,
+          ).thenReturn(ownerPubkey);
+          when(
+            () => mockMessageDatasource.messageExists(any()),
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockMessageDatasource.saveMessage(any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(any()),
+          ).thenAnswer((_) async => null);
+          when(
+            () => mockSessionDatasource.getSessionByRecipient(peerPubkey),
+          ).thenAnswer((_) async => session);
+
+          const messageRumorJson =
+              '{"id":"msg-sender-copy-1","pubkey":"$otherClientPubkey","created_at":1700000003,"kind":14,"content":"hello from another client","tags":[["p","$peerPubkey"]]}';
+
+          final received = await notifier.receiveDecryptedMessage(
+            peerPubkey,
+            messageRumorJson,
+          );
+
+          expect(received, isNotNull);
+          expect(received!.sessionId, session.id);
+          expect(received.isOutgoing, isTrue);
+          expect(notifier.state.messages[session.id], isNotNull);
+          expect(
+            notifier.state.messages[session.id]!.single.text,
+            'hello from another client',
+          );
+          expect(fakeDesktopNotificationService.messageCalls, 0);
+          verify(() => mockMessageDatasource.saveMessage(any())).called(1);
         },
       );
 

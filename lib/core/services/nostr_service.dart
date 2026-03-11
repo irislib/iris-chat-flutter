@@ -5,15 +5,29 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'logger_service.dart';
 
+typedef NostrChannelConnector = Future<WebSocketChannel> Function(Uri uri);
+
 /// Service for communicating with Nostr relays.
 class NostrService {
-  NostrService({List<String>? relayUrls})
-    : _relayUrls = relayUrls ?? defaultRelays;
+  NostrService({
+    List<String>? relayUrls,
+    Duration baseReconnectDelay = const Duration(seconds: 2),
+    Duration maxReconnectDelay = const Duration(seconds: 30),
+    NostrChannelConnector? connectChannel,
+  }) : _relayUrls = relayUrls ?? defaultRelays,
+       _baseReconnectDelay = baseReconnectDelay,
+       _maxReconnectDelay = maxReconnectDelay,
+       _connectChannel = connectChannel ?? _defaultConnectChannel;
 
   final List<String> _relayUrls;
+  final Duration _baseReconnectDelay;
+  final Duration _maxReconnectDelay;
+  final NostrChannelConnector _connectChannel;
   final Map<String, WebSocketChannel> _connections = {};
   final Map<String, StreamSubscription<dynamic>> _relaySubscriptions = {};
   final Map<String, Set<String>> _activeSubscriptions = {};
+  final Map<String, Timer> _reconnectTimers = {};
+  final Set<String> _connectingRelays = <String>{};
   // Desired subscriptions keyed by subscription id. These are replayed on (re)connect so
   // the app keeps receiving events after reconnects, and so subscriptions issued before
   // the websocket is connected aren't lost.
@@ -30,8 +44,6 @@ class NostrService {
 
   bool _disposed = false;
   final Map<String, int> _reconnectAttempts = {};
-  static const _maxReconnectAttempts = 5;
-  static const _baseReconnectDelay = Duration(seconds: 2);
 
   /// Stream of incoming events from all connected relays.
   Stream<NostrEvent> get events => _eventController.stream;
@@ -65,7 +77,12 @@ class NostrService {
   }
 
   Future<void> _connectToRelay(String url) async {
-    if (_disposed || _connections.containsKey(url)) return;
+    if (_disposed || _connections.containsKey(url) || _connectingRelays.contains(url)) {
+      return;
+    }
+
+    _reconnectTimers.remove(url)?.cancel();
+    _connectingRelays.add(url);
 
     try {
       Logger.debug(
@@ -74,8 +91,7 @@ class NostrService {
         data: {'url': url},
       );
 
-      final channel = WebSocketChannel.connect(Uri.parse(url));
-      await channel.ready;
+      final channel = await _connectChannel(Uri.parse(url));
 
       _connections[url] = channel;
       _reconnectAttempts[url] = 0;
@@ -121,7 +137,15 @@ class NostrService {
       );
 
       _scheduleReconnect(url);
+    } finally {
+      _connectingRelays.remove(url);
     }
+  }
+
+  static Future<WebSocketChannel> _defaultConnectChannel(Uri uri) async {
+    final channel = WebSocketChannel.connect(uri);
+    await channel.ready;
+    return channel;
   }
 
   void _handleMessage(String relay, dynamic data) {
@@ -248,34 +272,34 @@ class NostrService {
   }
 
   void _scheduleReconnect(String relay) {
-    if (_disposed) return;
-
-    final attempts = _reconnectAttempts[relay] ?? 0;
-    if (attempts >= _maxReconnectAttempts) {
-      Logger.warning(
-        'Max reconnect attempts reached for relay',
-        category: LogCategory.nostr,
-        data: {'relay': relay, 'attempts': attempts},
-      );
+    if (_disposed ||
+        _connections.containsKey(relay) ||
+        _reconnectTimers.containsKey(relay)) {
       return;
     }
 
-    _reconnectAttempts[relay] = attempts + 1;
+    final attempts = (_reconnectAttempts[relay] ?? 0) + 1;
+    _reconnectAttempts[relay] = attempts;
 
-    // Exponential backoff
-    final delay = _baseReconnectDelay * (1 << attempts);
+    // Keep retrying indefinitely, but cap the backoff so long-lived sessions
+    // eventually recover without user intervention after transient relay churn.
+    var delay = _baseReconnectDelay * (1 << (attempts - 1));
+    if (delay > _maxReconnectDelay) {
+      delay = _maxReconnectDelay;
+    }
 
     Logger.debug(
       'Scheduling reconnect',
       category: LogCategory.nostr,
       data: {
         'relay': relay,
-        'attempt': attempts + 1,
+        'attempt': attempts,
         'delaySeconds': delay.inSeconds,
       },
     );
 
-    Future.delayed(delay, () {
+    _reconnectTimers[relay] = Timer(delay, () {
+      _reconnectTimers.remove(relay);
       if (!_disposed) {
         _connectToRelay(relay);
       }
@@ -451,6 +475,12 @@ class NostrService {
   /// Disconnect from all relays and release resources.
   Future<void> disconnect() async {
     Logger.info('Disconnecting from all relays', category: LogCategory.nostr);
+
+    for (final timer in _reconnectTimers.values) {
+      timer.cancel();
+    }
+    _reconnectTimers.clear();
+    _connectingRelays.clear();
 
     // Cancel all relay stream subscriptions
     for (final sub in _relaySubscriptions.values) {

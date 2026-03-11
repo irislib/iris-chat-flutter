@@ -500,7 +500,31 @@ class ChatNotifier extends StateNotifier<ChatState> {
         return null;
       }
 
-      final isMine = ownerPubkeyHex != null && rumor.pubkey == ownerPubkeyHex;
+      final ownerPubkey = ownerPubkeyHex?.toLowerCase().trim();
+      final rumorPubkey = rumor.pubkey.toLowerCase().trim();
+      final senderPubkey = senderPubkeyHex.toLowerCase().trim();
+      final recipientPubkey = peerPubkeyHex.toLowerCase().trim();
+      final pTagPubkey = getFirstTagValue(
+        rumor.tags,
+        'p',
+      )?.toLowerCase().trim();
+
+      final isDirectSelfMessage =
+          ownerPubkey != null &&
+          ownerPubkey.isNotEmpty &&
+          (rumorPubkey == ownerPubkey || senderPubkey == ownerPubkey);
+
+      // Match iris-chat behavior: sender-copy messages from another own client
+      // can be surfaced through the peer chat stream instead of our owner stream.
+      final isSenderCopySelfMessage =
+          ownerPubkey != null &&
+          ownerPubkey.isNotEmpty &&
+          pTagPubkey != null &&
+          pTagPubkey.isNotEmpty &&
+          pTagPubkey != ownerPubkey &&
+          pTagPubkey == recipientPubkey;
+
+      final isMine = isDirectSelfMessage || isSenderCopySelfMessage;
 
       // De-dup using stable inner id.
       if (await _messageDatasource.messageExists(rumor.id)) {
